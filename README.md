@@ -53,7 +53,7 @@ cd ios && pod install
 ### Basic Example
 
 ```typescript
-import ReactNativePosPrinter from '@siam/react-native-pos-printer';
+import ReactNativePosPrinter from 'react-native-thermal-pos-printer';
 
 // Initialize the printer
 await ReactNativePosPrinter.init();
