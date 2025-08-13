@@ -1,4 +1,4 @@
-# @siam/react-native-pos-printer
+# react-native-thermal-pos-printer
 
 A comprehensive React Native package for thermal printer integration, supporting popular brands like Xprinter and other ESC/POS compatible printers.
 
@@ -20,7 +20,7 @@ A comprehensive React Native package for thermal printer integration, supporting
 ## Installation
 
 ```bash
-npm install @siam/react-native-pos-printer
+npm install react-native-thermal-pos-printer
 ```
 
 ### iOS Setup
