@@ -29,7 +29,6 @@ import java.io.OutputStream;
 import java.util.Set;
 import java.util.UUID;
 
-// Add these imports
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.facebook.react.bridge.ReactContext;
 
@@ -43,6 +42,7 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
     private BluetoothSocket bluetoothSocket;
     private OutputStream outputStream;
     private boolean isConnected = false;
+    private final PosPrinterConfig config;
     
     private static final byte[] ESC_INIT = {0x1B, 0x40};
     private static final byte[] ESC_CUT = {0x1D, 0x56, 0x00};
@@ -57,8 +57,9 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
     private static final byte[] ESC_SIZE_LARGE = {0x1D, 0x21, 0x11};
     private static final byte[] ESC_CASH_DRAWER = {0x1B, 0x70, 0x00, 0x19, (byte) 0xFA};
 
-    public PosPrinterModule(ReactApplicationContext reactContext) {
+    public PosPrinterModule(ReactApplicationContext reactContext, PosPrinterConfig config) {
         super(reactContext);
+        this.config = config;
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
     }
 
@@ -140,20 +141,17 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
         }
     }
 
-    // Add event constants
     public static final String EVENT_DEVICE_CONNECTED = "DEVICE_CONNECTED";
     public static final String EVENT_DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED";
     public static final String EVENT_DEVICE_CONNECTION_LOST = "DEVICE_CONNECTION_LOST";
     public static final String EVENT_PRINT_STATUS = "PRINT_STATUS";
     
-    // Add event emitter method
     private void sendEvent(String eventName, WritableMap params) {
         getReactApplicationContext()
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
             .emit(eventName, params);
     }
     
-    // Update connectBluetoothPrinter method
     private void connectBluetoothPrinter(String address, Promise promise) {
         try {
             if (bluetoothSocket != null && bluetoothSocket.isConnected()) {
@@ -169,7 +167,6 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             outputStream.write(ESC_INIT);
             outputStream.flush();
             
-            // Emit connection event
             WritableMap eventData = Arguments.createMap();
             eventData.putString("address", address);
             eventData.putString("name", device.getName());
@@ -179,13 +176,11 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
         } catch (IOException e) {
             isConnected = false;
             
-            // Emit connection failed event
             WritableMap eventData = Arguments.createMap();
             eventData.putString("address", address);
             eventData.putString("error", e.getMessage());
             sendEvent(EVENT_DEVICE_CONNECTION_LOST, eventData);
-            
-            promise.reject(new PrinterError(PrinterError.PrinterErrorCode.CONNECTION_FAILED, e.getMessage(), e).toWritableMap());
+            promise.reject("CONNECTION_FAILED", e.getMessage(), e);
         }
     }
 }

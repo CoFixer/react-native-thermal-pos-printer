@@ -195,7 +195,7 @@ export class ThermalPrinterDevice {
         PrinterErrorCode.PRINT_FAILED,
         'Failed to print QR code',
         error
-      );
+      ); 
       PrinterEventManager.emit(PrinterEvent.PRINT_FAILED, { error: printerError });
       throw printerError;
     }

@@ -61,7 +61,7 @@ export class ReactNativePosPrinter {
           `Device with address ${address} not found`
         );
       }
-
+  
       this.currentDevice = new ThermalPrinterDevice(device);
       return this.currentDevice;
     } catch (error) {
