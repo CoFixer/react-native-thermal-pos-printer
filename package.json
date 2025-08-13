@@ -1,6 +1,6 @@
 {
   "name": "react-native-thermal-pos-printer",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "React Native thermal printer package for POS systems supporting Xprinter and other popular brands",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
@@ -54,14 +54,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/CoFixer/react-native-pos-printer.git"
+    "url": "git+https://github.com/CoFixer/react-native-thermal-pos-printer.git"
   },
   "author": "Siam <siammaruf.online@gmail.com> (https://github.com/siammaruf)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/CoFixer/react-native-pos-printer/issues"
+    "url": "https://github.com/CoFixer/react-native-thermal-pos-printer/issues"
   },
-  "homepage": "https://github.com/CoFixer/react-native-pos-printer#readme",
+  "homepage": "https://github.com/CoFixer/react-native-thermal-pos-printer#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
