@@ -1,6 +1,6 @@
 {
   "name": "react-native-thermal-pos-printer",
-  "version": "1.3.0",
+  "version": "1.3.2",
   "description": "React Native thermal printer package for POS systems supporting Xprinter and other popular brands",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
@@ -30,12 +30,18 @@
     "test": "jest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "lint:fix": "eslint \"**/*.{js,ts,tsx}\" --fix",
     "prepack": "bob build",
     "release": "release-it",
     "example": "yarn --cwd example",
     "bootstrap": "yarn example && yarn install",
     "clean": "del-cli lib",
-    "prepare": "bob build"
+    "prepare": "bob build",
+    "build": "bob build",
+    "build:watch": "bob build --watch",
+    "test:watch": "jest --watch",
+    "validate": "npm run typecheck && npm run lint && npm run test",
+    "ci": "npm run clean && npm run validate && npm run build"
   },
   "keywords": [
     "react-native",
