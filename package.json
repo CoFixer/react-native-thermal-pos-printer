@@ -1,0 +1,192 @@
+{
+  "name": "react-native-thermal-pos-printer",
+  "version": "1.0.0",
+  "description": "React Native thermal printer package for POS systems supporting Xprinter and other popular brands",
+  "main": "lib/commonjs/index",
+  "module": "lib/module/index",
+  "types": "lib/typescript/commonjs/index.d.ts",
+  "react-native": "src/index",
+  "source": "src/index",
+  "files": [
+    "src",
+    "lib",
+    "android",
+    "ios",
+    "cpp",
+    "*.podspec",
+    "!lib/typescript/example",
+    "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
+    "!**/__tests__",
+    "!**/__fixtures__",
+    "!**/__mocks__",
+    "!**/.*"
+  ],
+  "scripts": {
+    "test": "jest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"**/*.{js,ts,tsx}\"",
+    "prepack": "bob build",
+    "release": "release-it",
+    "example": "yarn --cwd example",
+    "bootstrap": "yarn example && yarn install",
+    "clean": "del-cli lib",
+    "prepare": "bob build"
+  },
+  "keywords": [
+    "react-native",
+    "ios",
+    "android",
+    "thermal-printer",
+    "pos-printer",
+    "xprinter",
+    "receipt-printer",
+    "bluetooth-printer",
+    "usb-printer",
+    "wifi-printer",
+    "new-architecture",
+    "turbo-modules",
+    "fabric"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CoFixer/react-native-pos-printer.git"
+  },
+  "author": "Siam <siammaruf.online@gmail.com> (https://github.com/siammaruf)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/CoFixer/react-native-pos-printer/issues"
+  },
+  "homepage": "https://github.com/CoFixer/react-native-pos-printer#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "devDependencies": {
+    "@react-native/eslint-config": "^0.75.0",
+    "@types/jest": "^29.5.5",
+    "@types/react": "^19.0.0",
+    "@types/react-native": "^0.73.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "del-cli": "^5.1.0",
+    "eslint": "^8.19.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "jest": "^29.6.3",
+    "prettier": "^3.0.2",
+    "react": "^19.1.0",
+    "react-native": "0.80.0",
+    "react-native-builder-bob": "^0.29.0",
+    "release-it": "^17.0.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.0.4"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": false
+    }
+  },
+  "engines": {
+    "node": ">= 18.0.0"
+  },
+  "packageManager": "yarn@4.0.0",
+  "jest": {
+    "preset": "react-native",
+    "modulePathIgnorePatterns": [
+      "<rootDir>/example/node_modules",
+      "<rootDir>/lib/"
+    ]
+  },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "release-it": {
+    "git": {
+      "commitMessage": "chore: release ${version}",
+      "tagName": "v${version}"
+    },
+    "npm": {
+      "publish": true
+    },
+    "github": {
+      "release": true
+    },
+    "plugins": {
+      "@release-it/conventional-changelog": {
+        "preset": "angular"
+      }
+    }
+  },
+  "eslintConfig": {
+    "root": true,
+    "extends": [
+      "@react-native",
+      "prettier"
+    ],
+    "rules": {
+      "react/react-in-jsx-scope": "off",
+      "prettier/prettier": [
+        "error",
+        {
+          "quoteProps": "consistent",
+          "singleQuote": true,
+          "tabWidth": 2,
+          "trailingComma": "es5",
+          "useTabs": false
+        }
+      ]
+    }
+  },
+  "eslintIgnore": [
+    "node_modules/",
+    "lib/"
+  ],
+  "prettier": {
+    "quoteProps": "consistent",
+    "singleQuote": true,
+    "tabWidth": 2,
+    "trailingComma": "es5",
+    "useTabs": false
+  },
+  "react-native-builder-bob": {
+    "source": "src",
+    "output": "lib",
+    "targets": [
+      [
+        "commonjs",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "typescript",
+        {
+          "project": "tsconfig.build.json",
+          "esm": true
+        }
+      ]
+    ]
+  },
+  "codegenConfig": {
+    "name": "RNPosPrinterSpec",
+    "type": "modules",
+    "jsSrcsDir": "src"
+  }
+}
