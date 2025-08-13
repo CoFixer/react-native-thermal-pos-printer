@@ -13,6 +13,9 @@
     CBPeripheral *connectedPeripheral;
     CBCharacteristic *writeCharacteristic;
     BOOL isConnected;
+    NSMutableArray *discoveredDevices;
+    RCTPromiseResolveBlock deviceListResolve;
+    RCTPromiseRejectBlock deviceListReject;
 }
 
 RCT_EXPORT_MODULE()
@@ -22,6 +25,7 @@ RCT_EXPORT_MODULE()
     if (self) {
         centralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
         isConnected = NO;
+        discoveredDevices = [[NSMutableArray alloc] init];
     }
     return self;
 }
@@ -33,8 +37,85 @@ RCT_EXPORT_METHOD(init:(RCTPromiseResolveBlock)resolve
 
 RCT_EXPORT_METHOD(getDeviceList:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
-    NSArray *devices = @[];
+    NSMutableArray *devices = [[NSMutableArray alloc] init];
+    
+    if (centralManager.state != CBManagerStatePoweredOn) {
+        reject(@"BLUETOOTH_OFF", @"Bluetooth is not powered on", nil);
+        return;
+    }
+    
+    // Get previously connected/paired peripherals
+    NSArray *knownPeripherals = [centralManager retrieveConnectedPeripheralsWithServices:@[]];
+    
+    // Also get peripherals with known identifiers (if you have stored them)
+    // NSArray *retrievedPeripherals = [centralManager retrievePeripheralsWithIdentifiers:@[/* stored UUIDs */]];
+    
+    for (CBPeripheral *peripheral in knownPeripherals) {
+        NSDictionary *device = @{
+            @"name": peripheral.name ?: @"Unknown Device",
+            @"address": peripheral.identifier.UUIDString,
+            @"type": @"BLUETOOTH",
+            @"connected": @(peripheral.state == CBPeripheralStateConnected)
+        };
+        [devices addObject:device];
+    }
+    
     resolve(devices);
+}
+    deviceListResolve = resolve;
+    deviceListReject = reject;
+    
+    if (centralManager.state != CBManagerStatePoweredOn) {
+        reject(@"BLUETOOTH_OFF", @"Bluetooth is not powered on", nil);
+        return;
+    }
+    
+    [discoveredDevices removeAllObjects];
+    
+    // Start scanning for peripherals
+    [centralManager scanForPeripheralsWithServices:nil options:nil];
+    
+    // Stop scanning after 10 seconds and return results
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [self->centralManager stopScan];
+        
+        NSMutableArray *devices = [[NSMutableArray alloc] init];
+        for (CBPeripheral *peripheral in self->discoveredDevices) {
+            NSDictionary *device = @{
+                @"name": peripheral.name ?: @"Unknown Device",
+                @"address": peripheral.identifier.UUIDString,
+                @"type": @"BLUETOOTH",
+                @"connected": @(peripheral.state == CBPeripheralStateConnected)
+            };
+            [devices addObject:device];
+        }
+        
+        if (self->deviceListResolve) {
+            self->deviceListResolve(devices);
+            self->deviceListResolve = nil;
+            self->deviceListReject = nil;
+        }
+    });
+}
+
+#pragma mark - CBCentralManagerDelegate
+
+- (void)centralManagerDidUpdateState:(CBCentralManager *)central {
+    if (central.state == CBManagerStatePoweredOn) {
+        // Bluetooth is ready
+    } else {
+        if (deviceListReject) {
+            deviceListReject(@"BLUETOOTH_ERROR", @"Bluetooth is not available", nil);
+            deviceListResolve = nil;
+            deviceListReject = nil;
+        }
+    }
+}
+
+- (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
+    if (![discoveredDevices containsObject:peripheral]) {
+        [discoveredDevices addObject:peripheral];
+    }
 }
 
 RCT_EXPORT_METHOD(connectPrinter:(NSString *)address
@@ -313,11 +394,6 @@ RCT_EXPORT_METHOD(printRaw:(NSArray *)data
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject) {
     resolve(@YES);
-}
-
-#pragma mark - CBCentralManagerDelegate
-
-- (void)centralManagerDidUpdateState:(CBCentralManager *)central {
 }
 
 #pragma mark - CBPeripheralDelegate

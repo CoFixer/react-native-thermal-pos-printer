@@ -80,17 +80,33 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
         try {
             WritableArray deviceList = Arguments.createArray();
             
-            if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
-                Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
-                
-                for (BluetoothDevice device : pairedDevices) {
-                    WritableMap deviceMap = Arguments.createMap();
-                    deviceMap.putString("name", device.getName());
-                    deviceMap.putString("address", device.getAddress());
-                    deviceMap.putString("type", "BLUETOOTH");
-                    deviceMap.putBoolean("connected", false);
-                    deviceList.pushMap(deviceMap);
+            if (bluetoothAdapter == null) {
+                promise.reject("BLUETOOTH_NOT_SUPPORTED", "Bluetooth is not supported on this device");
+                return;
+            }
+            
+            if (!bluetoothAdapter.isEnabled()) {
+                promise.reject("BLUETOOTH_DISABLED", "Bluetooth is not enabled");
+                return;
+            }
+            
+            // Check for permissions (Android 6.0+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (getCurrentActivity().checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    promise.reject("PERMISSION_DENIED", "Location permission is required for Bluetooth device discovery");
+                    return;
                 }
+            }
+            
+            Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
+            
+            for (BluetoothDevice device : pairedDevices) {
+                WritableMap deviceMap = Arguments.createMap();
+                deviceMap.putString("name", device.getName());
+                deviceMap.putString("address", device.getAddress());
+                deviceMap.putString("type", "BLUETOOTH");
+                deviceMap.putBoolean("connected", false);
+                deviceList.pushMap(deviceMap);
             }
             
             promise.resolve(deviceList);

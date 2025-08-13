@@ -129,11 +129,3 @@ export class ReactNativePosPrinter {
 }
 
 export default ReactNativePosPrinter;
-
-// export type {
-//   PrintOptions,
-//   TextOptions,
-//   ImageOptions,
-//   BarcodeOptions,
-//   QRCodeOptions,
-// };
