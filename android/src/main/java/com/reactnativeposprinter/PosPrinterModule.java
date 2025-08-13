@@ -29,6 +29,10 @@ import java.io.OutputStream;
 import java.util.Set;
 import java.util.UUID;
 
+// Add these imports
+import com.facebook.react.modules.core.DeviceEventManagerModule;
+import com.facebook.react.bridge.ReactContext;
+
 @ReactModule(name = PosPrinterModule.NAME)
 public class PosPrinterModule extends ReactContextBaseJavaModule {
     public static final String NAME = "PosPrinter";
@@ -92,8 +96,13 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
                 return;
             }
             
-            // Check for permissions (Android 6.0+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // Check for permissions (Android 12+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (getCurrentActivity().checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                    promise.reject("PERMISSION_DENIED", "BLUETOOTH_CONNECT permission is required");
+                    return;
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 if (getCurrentActivity().checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                     promise.reject("PERMISSION_DENIED", "Location permission is required for Bluetooth device discovery");
                     return;
@@ -104,10 +113,11 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             
             for (BluetoothDevice device : pairedDevices) {
                 WritableMap deviceMap = Arguments.createMap();
-                deviceMap.putString("name", device.getName());
+                deviceMap.putString("name", device.getName() != null ? device.getName() : "Unknown Device");
                 deviceMap.putString("address", device.getAddress());
                 deviceMap.putString("type", "BLUETOOTH");
                 deviceMap.putBoolean("connected", false);
+                deviceMap.putInt("bondState", device.getBondState());
                 deviceList.pushMap(deviceMap);
             }
             
@@ -130,6 +140,20 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
         }
     }
 
+    // Add event constants
+    public static final String EVENT_DEVICE_CONNECTED = "DEVICE_CONNECTED";
+    public static final String EVENT_DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED";
+    public static final String EVENT_DEVICE_CONNECTION_LOST = "DEVICE_CONNECTION_LOST";
+    public static final String EVENT_PRINT_STATUS = "PRINT_STATUS";
+    
+    // Add event emitter method
+    private void sendEvent(String eventName, WritableMap params) {
+        getReactApplicationContext()
+            .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+            .emit(eventName, params);
+    }
+    
+    // Update connectBluetoothPrinter method
     private void connectBluetoothPrinter(String address, Promise promise) {
         try {
             if (bluetoothSocket != null && bluetoothSocket.isConnected()) {
@@ -145,12 +169,26 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             outputStream.write(ESC_INIT);
             outputStream.flush();
             
+            // Emit connection event
+            WritableMap eventData = Arguments.createMap();
+            eventData.putString("address", address);
+            eventData.putString("name", device.getName());
+            sendEvent(EVENT_DEVICE_CONNECTED, eventData);
+            
             promise.resolve(true);
         } catch (IOException e) {
             isConnected = false;
-            promise.reject("BLUETOOTH_CONNECT_ERROR", e.getMessage());
+            
+            // Emit connection failed event
+            WritableMap eventData = Arguments.createMap();
+            eventData.putString("address", address);
+            eventData.putString("error", e.getMessage());
+            sendEvent(EVENT_DEVICE_CONNECTION_LOST, eventData);
+            
+            promise.reject(new PrinterError(PrinterError.PrinterErrorCode.CONNECTION_FAILED, e.getMessage(), e).toWritableMap());
         }
     }
+}
 
     @ReactMethod
     public void disconnectPrinter(Promise promise) {

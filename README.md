@@ -1,12 +1,14 @@
 # react-native-thermal-pos-printer
 
-A comprehensive React Native package for thermal printer integration, supporting popular brands like Xprinter and other ESC/POS compatible printers.
+A comprehensive React Native package for thermal printer integration, supporting popular brands like Xprinter and other ESC/POS compatible printers with advanced device management.
 
 ## Features
 
 - 🖨️ Support for thermal POS printers (Xprinter, Epson, Star, etc.)
 - 📱 Cross-platform (iOS & Android)
 - 🔗 Multiple connection types (Bluetooth, USB, WiFi, Ethernet)
+- 🎯 **Object-oriented device management** with individual device instances
+- 🔍 **Device discovery and auto-linking** for React Native 0.60+
 - 📄 Text printing with advanced formatting options
 - 🖼️ Base64 image printing with automatic resizing
 - 📊 Comprehensive barcode support (CODE128, CODE39, EAN13, UPC-A, etc.)
@@ -16,11 +18,48 @@ A comprehensive React Native package for thermal printer integration, supporting
 - 🔧 Raw ESC/POS command support
 - 🎨 **Numeric font size control (12, 24, 36, 48, etc.) and text alignment**
 - 📐 Image scaling and positioning
+- 🔄 **Device-specific connection management**
+- 📊 **Individual device status monitoring**
 
 ## Installation
 
 ```bash
 npm install react-native-thermal-pos-printer
+```
+
+### React Native 0.60+ (Auto-linking)
+
+For React Native 0.60 and above, the package will be automatically linked. Just run:
+
+```bash
+# iOS
+cd ios && pod install
+
+# Android - Clean and rebuild
+cd android && ./gradlew clean && cd ..
+npx react-native run-android
+```
+
+### Manual Linking (if auto-linking fails)
+
+If auto-linking doesn't work, add this to your main app's `react-native.config.js`:
+
+```javascript
+module.exports = {
+  dependencies: {
+    'react-native-thermal-pos-printer': {
+      platforms: {
+        android: {
+          sourceDir: '../node_modules/react-native-thermal-pos-printer/android/',
+          packageImportPath: 'import com.reactnativeposprinter.PosPrinterPackage;',
+        },
+        ios: {
+          podspecPath: '../node_modules/react-native-thermal-pos-printer/react-native-pos-printer.podspec',
+        },
+      },
+    },
+  },
+};
 ```
 
 ### iOS Setup
@@ -42,6 +81,11 @@ cd ios && pod install
 
 1. Add permissions to `android/app/src/main/AndroidManifest.xml`:
 ```xml
+<!-- For Android 12+ -->
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
+<!-- For older Android versions -->
 <uses-permission android:name="android.permission.BLUETOOTH" />
 <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -50,7 +94,61 @@ cd ios && pod install
 
 ## Usage
 
-### Basic Example
+### New Object-Oriented Approach (Recommended)
+
+```typescript
+import { ReactNativePosPrinter, ThermalPrinterDevice } from 'react-native-thermal-pos-printer';
+
+// Initialize the printer module
+await ReactNativePosPrinter.init();
+
+// Get available devices as ThermalPrinterDevice instances
+const devices: ThermalPrinterDevice[] = await ReactNativePosPrinter.getDevices();
+console.log('Available devices:', devices);
+
+// Connect to a specific device
+const printer = devices[0];
+if (printer) {
+  // Connect with options
+  await printer.connect({ 
+    timeout: 5000, 
+    encoding: 'UTF-8' 
+  });
+  
+  // Print using the device instance
+  await printer.printText('Hello World!', {
+    align: 'CENTER',
+    size: 24,
+    bold: true
+  });
+  
+  // Check device status
+  const status = await printer.getStatus();
+  console.log('Printer status:', status);
+  
+  // Print image
+  await printer.printImage(base64Image, {
+    align: 'CENTER',
+    width: 300
+  });
+  
+  // Disconnect
+  await printer.disconnect();
+}
+
+// Get a specific device by address
+const specificPrinter = await ReactNativePosPrinter.getDevice('00:11:22:33:44:55');
+if (specificPrinter) {
+  await specificPrinter.connect();
+  await specificPrinter.printText('Connected to specific printer!');
+}
+
+// Discover nearby Bluetooth devices
+const discoveredDevices = await ReactNativePosPrinter.discoverDevices(10000);
+console.log('Discovered devices:', discoveredDevices);
+```
+
+### Legacy Static Methods (Still Supported)
 
 ```typescript
 import ReactNativePosPrinter from 'react-native-thermal-pos-printer';
@@ -58,10 +156,10 @@ import ReactNativePosPrinter from 'react-native-thermal-pos-printer';
 // Initialize the printer
 await ReactNativePosPrinter.init();
 
-// Get available devices
+// Get available devices (legacy method)
 const devices = await ReactNativePosPrinter.getDeviceList();
 
-// Connect to a printer
+// Connect to a printer (legacy method)
 await ReactNativePosPrinter.connectPrinter(device.address, 'BLUETOOTH');
 
 // Print text with numeric font size
@@ -76,78 +174,85 @@ await ReactNativePosPrinter.printText('Hello World!', {
 await ReactNativePosPrinter.cutPaper();
 ```
 
-### Font Size Examples
+### Advanced Device Management
 
 ```typescript
-// Different font sizes with numeric values
-await ReactNativePosPrinter.printText('Small text (12pt)', { size: 12 });
-await ReactNativePosPrinter.printText('Medium text (18pt)', { size: 18 });
-await ReactNativePosPrinter.printText('Large text (24pt)', { size: 24 });
-await ReactNativePosPrinter.printText('Extra Large text (36pt)', { size: 36 });
-await ReactNativePosPrinter.printText('Maximum text (48pt)', { size: 48 });
+// Multiple device management
+const devices = await ReactNativePosPrinter.getDevices();
+const connectedDevices: ThermalPrinterDevice[] = [];
 
-// Font size ranges and their effects:
-// ≤ 12: Normal size
-// 13-18: Small increase
-// 19-24: Medium size  
-// 25-36: Large size
-// 37-48: Extra large
-// > 48: Maximum size
+// Connect to multiple devices
+for (const device of devices) {
+  try {
+    await device.connect({ timeout: 3000 });
+    connectedDevices.push(device);
+    console.log(`Connected to ${device.name}`);
+  } catch (error) {
+    console.log(`Failed to connect to ${device.name}:`, error);
+  }
+}
+
+// Print to all connected devices
+for (const device of connectedDevices) {
+  await device.printText(`Hello from ${device.name}!`);
+}
+
+// Check connection status
+for (const device of connectedDevices) {
+  const isConnected = await device.isConnected();
+  console.log(`${device.name} connected: ${isConnected}`);
+}
 ```
 
-### Advanced Usage
+### Complete Receipt Example
 
 ```typescript
-// Print a complete receipt with images, barcodes, and QR codes
-const printAdvancedReceipt = async () => {
+const printAdvancedReceipt = async (printer: ThermalPrinterDevice) => {
   try {
+    // Ensure device is connected
+    if (!await printer.isConnected()) {
+      await printer.connect();
+    }
+    
     // Print logo (base64 image)
     const logoBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
-    await ReactNativePosPrinter.printImage(logoBase64, {
+    await printer.printImage(logoBase64, {
       align: 'CENTER',
       width: 200,
       height: 100
     });
     
     // Header with large font
-    await ReactNativePosPrinter.printText('MY STORE', {
+    await printer.printText('MY STORE', {
       align: 'CENTER',
       size: 36,  // Large numeric font size
       bold: true,
       fontType: 'A'
     });
     
-    await ReactNativePosPrinter.printText('123 Main St, City, State', {
+    await printer.printText('123 Main St, City, State', {
       align: 'CENTER',
       size: 18  // Medium numeric font size
     });
     
-    await ReactNativePosPrinter.printText('Tel: (555) 123-4567', {
+    await printer.printText('Tel: (555) 123-4567', {
       align: 'CENTER',
       size: 12  // Small numeric font size
     });
     
-    await ReactNativePosPrinter.printText('\n' + '='.repeat(32) + '\n');
+    await printer.printText('\n' + '='.repeat(32) + '\n');
     
     // Items
-    await ReactNativePosPrinter.printText('Item 1                    $10.00');
-    await ReactNativePosPrinter.printText('Item 2                    $15.00');
-    await ReactNativePosPrinter.printText('Tax                        $2.50');
+    await printer.printText('Item 1                    $10.00');
+    await printer.printText('Item 2                    $15.00');
+    await printer.printText('Tax                        $2.50');
     
-    await ReactNativePosPrinter.printText('\n' + '-'.repeat(32) + '\n');
+    await printer.printText('\n' + '-'.repeat(32) + '\n');
     
     // Total with large font
-    await ReactNativePosPrinter.printText('TOTAL                     $27.50', {
+    await printer.printText('TOTAL                     $27.50', {
       bold: true,
       size: 24  // Large numeric font size
-    });
-    
-    // Print barcode
-    await ReactNativePosPrinter.printBarcode('1234567890123', 'EAN13', {
-      align: 'CENTER',
-      height: 60,
-      width: 2,
-      textPosition: 'BELOW'
     });
     
     // QR Code with high error correction
@@ -157,12 +262,15 @@ const printAdvancedReceipt = async () => {
       errorLevel: 'H'
     });
     
-    await ReactNativePosPrinter.printText('\nThank you for your business!\n', {
+    await printer.printText('\nThank you for your business!\n', {
       align: 'CENTER'
     });
     
-    // Cut paper
-    await ReactNativePosPrinter.cutPaper();
+    // Check status before cutting
+    const status = await printer.getStatus();
+    if (status.online && !status.paperOut) {
+      await ReactNativePosPrinter.cutPaper();
+    }
     
   } catch (error) {
     console.error('Print error:', error);
@@ -172,53 +280,128 @@ const printAdvancedReceipt = async () => {
 
 ## API Reference
 
-### Methods
+### ThermalPrinterDevice Class
+
+#### Properties
+- `name: string` - Device name
+- `address: string` - Device address (MAC address for Bluetooth)
+- `id: string` - Unique device identifier
+- `type: 'BLUETOOTH' | 'USB' | 'WIFI' | 'ETHERNET'` - Connection type
+- `connected: boolean` - Current connection status
+- `rssi?: number` - Signal strength (Bluetooth only)
+- `batteryLevel?: number` - Battery level (if supported)
+- `bondState?: number` - Bluetooth bond state
+- `deviceClass?: string` - Device class information
+
+#### Methods
+
+##### `connect(options?: ConnectionOptions): Promise<boolean>`
+Connect to this specific printer device.
+
+```typescript
+interface ConnectionOptions {
+  timeout?: number;           // Connection timeout in ms
+  encoding?: 'UTF-8' | 'GBK' | 'GB2312' | 'BIG5';
+  delimiter?: string;         // Message delimiter
+  secure?: boolean;          // Use secure connection
+}
+```
+
+##### `isConnected(): Promise<boolean>`
+Check if this device is currently connected.
+
+##### `disconnect(): Promise<boolean>`
+Disconnect from this device.
+
+##### `printText(text: string, options?: TextOptions): Promise<boolean>`
+Print text using this specific device.
+
+##### `printImage(base64: string, options?: ImageOptions): Promise<boolean>`
+Print image using this specific device.
+
+##### `getStatus(): Promise<PrinterStatus>`
+Get printer status for this specific device.
+
+### ReactNativePosPrinter Static Methods
 
 #### `init(): Promise<boolean>`
 Initialize the printer module.
 
+#### `getDevices(): Promise<ThermalPrinterDevice[]>`
+Get list of available devices as ThermalPrinterDevice instances.
+
+#### `getDevice(address: string): Promise<ThermalPrinterDevice | null>`
+Get a specific device by address.
+
+#### `discoverDevices(timeout?: number): Promise<ThermalPrinterDevice[]>`
+Discover nearby Bluetooth devices.
+
+#### Legacy Methods (Still Supported)
+
 #### `getDeviceList(): Promise<PrinterDevice[]>`
-Get list of available printer devices.
+Get list of available printer devices (legacy format).
 
 #### `connectPrinter(address: string, type: string): Promise<boolean>`
-Connect to a printer device.
+Connect to a printer device (legacy method).
 
 #### `disconnectPrinter(): Promise<boolean>`
-Disconnect from the current printer.
+Disconnect from the current printer (legacy method).
 
 #### `isConnected(): Promise<boolean>`
-Check if printer is connected.
+Check if printer is connected (legacy method).
 
 #### `printText(text: string, options?: TextOptions): Promise<boolean>`
-Print text with formatting options including numeric font sizes.
+Print text with formatting options (legacy method).
 
 #### `printImage(base64: string, options?: ImageOptions): Promise<boolean>`
-Print image from base64 string with automatic resizing and format conversion.
+Print image from base64 string (legacy method).
 
 #### `printQRCode(data: string, options?: QRCodeOptions): Promise<boolean>`
-Print QR code with customizable size and error correction.
+Print QR code (legacy method).
 
 #### `printBarcode(data: string, type: string, options?: BarcodeOptions): Promise<boolean>`
-Print barcode with support for multiple formats.
+Print barcode (legacy method).
 
 #### `cutPaper(): Promise<boolean>`
-Cut paper.
+Cut paper (legacy method).
 
 #### `openCashDrawer(): Promise<boolean>`
-Open cash drawer.
+Open cash drawer (legacy method).
 
 ### Types
 
 ```typescript
+interface ThermalPrinterNativeDevice {
+  name: string;
+  address: string;
+  id: string;
+  type: 'BLUETOOTH' | 'USB' | 'WIFI' | 'ETHERNET';
+  connected: boolean;
+  rssi?: number;
+  batteryLevel?: number;
+  bondState?: number;
+  deviceClass?: string;
+  extra?: Map<string, Object>;
+}
+
 interface PrinterDevice {
   name: string;
   address: string;
   type: 'BLUETOOTH' | 'USB' | 'WIFI' | 'ETHERNET';
   connected: boolean;
+  rssi?: number;
+  batteryLevel?: number;
+}
+
+interface ConnectionOptions {
+  timeout?: number;
+  encoding?: 'UTF-8' | 'GBK' | 'GB2312' | 'BIG5';
+  delimiter?: string;
+  secure?: boolean;
 }
 
 interface PrintOptions {
-  encoding?: string;
+  encoding?: 'UTF-8' | 'GBK' | 'GB2312' | 'BIG5';
   codepage?: number;
   width?: number;
   height?: number;
@@ -226,37 +409,53 @@ interface PrintOptions {
   cut?: boolean;
   tailingLine?: boolean;
   openCashBox?: boolean;
+  copies?: number;
 }
 
 interface TextOptions {
   align?: 'LEFT' | 'CENTER' | 'RIGHT';
-  size?: number;  // Numeric font size (12, 18, 24, 36, 48, etc.)
+  size?: 'SMALL' | 'NORMAL' | 'LARGE' | 'XLARGE' | number;
   bold?: boolean;
   underline?: boolean;
   fontType?: 'A' | 'B' | 'C';
   italic?: boolean;
   strikethrough?: boolean;
   doubleStrike?: boolean;
+  invert?: boolean;
+  rotate?: 0 | 90 | 180 | 270;
 }
 
 interface ImageOptions {
-  align?: 'LEFT' | 'CENTER' | 'RIGHT';
   width?: number;
   height?: number;
+  align?: 'LEFT' | 'CENTER' | 'RIGHT';
+  threshold?: number;
+  dithering?: boolean;
 }
 
 interface BarcodeOptions {
-  align?: 'LEFT' | 'CENTER' | 'RIGHT';
-  height?: number;
   width?: number;
+  height?: number;
+  align?: 'LEFT' | 'CENTER' | 'RIGHT';
   textPosition?: 'NONE' | 'ABOVE' | 'BELOW' | 'BOTH';
   fontSize?: number;
+  hri?: boolean;
 }
 
 interface QRCodeOptions {
   size?: number;
   align?: 'LEFT' | 'CENTER' | 'RIGHT';
   errorLevel?: 'L' | 'M' | 'Q' | 'H';
+  model?: 1 | 2;
+}
+
+interface PrinterStatus {
+  online: boolean;
+  paperOut: boolean;
+  coverOpen: boolean;
+  cutterError: boolean;
+  temperature: 'NORMAL' | 'HIGH';
+  voltage: 'NORMAL' | 'LOW';
 }
 ```
 
@@ -265,7 +464,7 @@ interface QRCodeOptions {
 The library supports numeric font sizes with the following mapping:
 
 | Font Size Range | Effect | Multiplier |
-|----------------|--------|-----------|
+|----------------|--------|-----------||
 | ≤ 12 | Normal size | 0x0 |
 | 13-18 | Small increase | 0x1 |
 | 19-24 | Medium size | 0x2 |
@@ -276,16 +475,16 @@ The library supports numeric font sizes with the following mapping:
 **Examples:**
 ```typescript
 // Normal size
-await ReactNativePosPrinter.printText('Normal text', { size: 12 });
+await printer.printText('Normal text', { size: 12 });
 
 // Medium size
-await ReactNativePosPrinter.printText('Medium text', { size: 24 });
+await printer.printText('Medium text', { size: 24 });
 
 // Large size
-await ReactNativePosPrinter.printText('Large text', { size: 36 });
+await printer.printText('Large text', { size: 36 });
 
 // Maximum size
-await ReactNativePosPrinter.printText('Max text', { size: 48 });
+await printer.printText('Max text', { size: 48 });
 ```
 
 ### Supported Barcode Types
@@ -315,77 +514,124 @@ await ReactNativePosPrinter.printText('Max text', { size: 48 });
 - Bixolon
 - Any ESC/POS compatible thermal printer
 
-## Image Printing
+## Migration Guide
 
-The package supports base64 image printing with automatic:
-- Format conversion to monochrome
-- Resizing to fit printer width
-- ESC/POS raster format conversion
-- Alignment control
+### From Legacy to Object-Oriented Approach
 
+**Before (Legacy):**
 ```typescript
-// Print image with custom dimensions
-const imageBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==';
-
-await ReactNativePosPrinter.printImage(imageBase64, {
-  align: 'CENTER',
-  width: 300,
-  height: 200
-});
+// Old way
+const devices = await ReactNativePosPrinter.getDeviceList();
+await ReactNativePosPrinter.connectPrinter(devices[0].address, 'BLUETOOTH');
+await ReactNativePosPrinter.printText('Hello World!');
+await ReactNativePosPrinter.disconnectPrinter();
 ```
+
+**After (Recommended):**
+```typescript
+// New way
+const devices = await ReactNativePosPrinter.getDevices();
+const printer = devices[0];
+await printer.connect();
+await printer.printText('Hello World!');
+await printer.disconnect();
+```
+
+### Benefits of New Approach
+
+1. **Better state management** - Each device tracks its own connection state
+2. **Type safety** - Full TypeScript support with proper interfaces
+3. **Cleaner API** - Device-specific methods instead of global static methods
+4. **Multiple device support** - Easy to manage multiple printers simultaneously
+5. **Better error handling** - Device-specific error messages
+6. **Extensibility** - Easy to add device-specific features
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Bluetooth connection fails**
-   - Ensure the printer is paired with the device
-   - Check Bluetooth permissions
-   - Make sure the printer is in pairing mode
+1. **Package doesn't seem to be linked**
+   - For React Native 0.60+: Delete any `react-native.config.js` from the library directory
+   - Clean and rebuild: `cd android && ./gradlew clean && cd .. && npx react-native run-android`
+   - For manual linking: Add config to your main app's `react-native.config.js`
 
-2. **Print quality issues**
+2. **Bluetooth connection fails**
+   - Ensure the printer is paired with the device
+   - Check Bluetooth permissions (especially for Android 12+)
+   - Make sure the printer is in pairing mode
+   - Use device discovery: `await ReactNativePosPrinter.discoverDevices()`
+
+3. **Print quality issues**
    - Check paper alignment
    - Ensure proper paper type (thermal paper)
    - Verify printer settings
+   - Check device status: `await printer.getStatus()`
 
-3. **Characters not printing correctly**
-   - Set proper encoding (UTF-8, GB2312, etc.)
+4. **Characters not printing correctly**
+   - Set proper encoding in connection options: `{ encoding: 'UTF-8' }`
    - Use appropriate codepage for your region
 
-4. **Image not printing**
+5. **Image not printing**
    - Ensure base64 string is valid
    - Check image dimensions (recommended max width: 384px)
    - Verify image format is supported (PNG, JPEG)
 
-5. **Barcode/QR code issues**
+6. **Barcode/QR code issues**
    - Verify data format matches barcode type
    - Check size parameters are within printer limits
    - Ensure sufficient paper width for barcode
 
-6. **Font size not working**
+7. **Font size not working**
    - Use numeric values (12, 24, 36, 48) instead of string values
    - Ensure the printer supports the ESC/POS font size commands
    - Note: iOS implementation may need additional font size command implementation
 
-## Publishing
+8. **Multiple device management**
+   - Use the new object-oriented approach for better device management
+   - Check connection status before operations: `await device.isConnected()`
+   - Handle device-specific errors appropriately
 
-To publish this package:
+## React Native Version Compatibility
 
-```bash
-# Build the package
-npm run prepack
-
-# Login to npm (if not already logged in)
-npm login
-
-# Publish with public access
-npm publish --access public
-```
+| Package Version | React Native Version | Notes |
+|----------------|---------------------|-------|
+| 1.3.x | >= 0.70.0 | Auto-linking support, Android 12+ permissions |
+| 1.2.x | >= 0.60.0 < 0.73.0 | Auto-linking support |
+| 1.1.x | >= 0.60.0 | Basic auto-linking |
+| 1.0.x | < 0.60.0 | Manual linking required |
 
 ## Contributing
 
 Contributions are welcome! Please read our contributing guidelines and submit pull requests.
 
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/react-native-thermal-pos-printer.git
+
+# Install dependencies
+npm install
+
+# Build the package
+npm run prepack
+
+# Run tests
+npm test
+```
+
 ## License
 
 MIT License - see LICENSE file for details.
+
+## Changelog
+
+### v1.3.3
+- Added object-oriented device management with `ThermalPrinterDevice` class
+- Improved auto-linking support for React Native 0.60+
+- Enhanced device discovery and connection management
+- Added device-specific status monitoring
+- Better error handling with device-specific messages
+- Support for Android 12+ Bluetooth permissions
+- Backward compatibility with legacy static methods
+- Enhanced TypeScript support with comprehensive interfaces
