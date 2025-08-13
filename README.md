@@ -14,7 +14,7 @@ A comprehensive React Native package for thermal printer integration, supporting
 - 💰 Cash drawer control
 - ✂️ Paper cutting
 - 🔧 Raw ESC/POS command support
-- 🎨 Font size control and text alignment
+- 🎨 **Numeric font size control (12, 24, 36, 48, etc.) and text alignment**
 - 📐 Image scaling and positioning
 
 ## Installation
@@ -64,16 +64,35 @@ const devices = await ReactNativePosPrinter.getDeviceList();
 // Connect to a printer
 await ReactNativePosPrinter.connectPrinter(device.address, 'BLUETOOTH');
 
-// Print text with formatting
+// Print text with numeric font size
 await ReactNativePosPrinter.printText('Hello World!', {
   align: 'CENTER',
-  size: 'LARGE',
+  size: 24,  // Numeric font size
   bold: true,
   fontType: 'A'
 });
 
 // Cut paper
 await ReactNativePosPrinter.cutPaper();
+```
+
+### Font Size Examples
+
+```typescript
+// Different font sizes with numeric values
+await ReactNativePosPrinter.printText('Small text (12pt)', { size: 12 });
+await ReactNativePosPrinter.printText('Medium text (18pt)', { size: 18 });
+await ReactNativePosPrinter.printText('Large text (24pt)', { size: 24 });
+await ReactNativePosPrinter.printText('Extra Large text (36pt)', { size: 36 });
+await ReactNativePosPrinter.printText('Maximum text (48pt)', { size: 48 });
+
+// Font size ranges and their effects:
+// ≤ 12: Normal size
+// 13-18: Small increase
+// 19-24: Medium size  
+// 25-36: Large size
+// 37-48: Extra large
+// > 48: Maximum size
 ```
 
 ### Advanced Usage
@@ -90,21 +109,22 @@ const printAdvancedReceipt = async () => {
       height: 100
     });
     
-    // Header
+    // Header with large font
     await ReactNativePosPrinter.printText('MY STORE', {
       align: 'CENTER',
-      size: 'XLARGE',
+      size: 36,  // Large numeric font size
       bold: true,
       fontType: 'A'
     });
     
     await ReactNativePosPrinter.printText('123 Main St, City, State', {
       align: 'CENTER',
-      size: 'NORMAL'
+      size: 18  // Medium numeric font size
     });
     
     await ReactNativePosPrinter.printText('Tel: (555) 123-4567', {
-      align: 'CENTER'
+      align: 'CENTER',
+      size: 12  // Small numeric font size
     });
     
     await ReactNativePosPrinter.printText('\n' + '='.repeat(32) + '\n');
@@ -116,10 +136,10 @@ const printAdvancedReceipt = async () => {
     
     await ReactNativePosPrinter.printText('\n' + '-'.repeat(32) + '\n');
     
-    // Total
+    // Total with large font
     await ReactNativePosPrinter.printText('TOTAL                     $27.50', {
       bold: true,
-      size: 'LARGE'
+      size: 24  // Large numeric font size
     });
     
     // Print barcode
@@ -170,7 +190,7 @@ Disconnect from the current printer.
 Check if printer is connected.
 
 #### `printText(text: string, options?: TextOptions): Promise<boolean>`
-Print text with formatting options.
+Print text with formatting options including numeric font sizes.
 
 #### `printImage(base64: string, options?: ImageOptions): Promise<boolean>`
 Print image from base64 string with automatic resizing and format conversion.
@@ -200,14 +220,23 @@ interface PrinterDevice {
 interface PrintOptions {
   encoding?: string;
   codepage?: number;
+  width?: number;
+  height?: number;
+  beep?: boolean;
+  cut?: boolean;
+  tailingLine?: boolean;
+  openCashBox?: boolean;
 }
 
 interface TextOptions {
   align?: 'LEFT' | 'CENTER' | 'RIGHT';
-  size?: 'SMALL' | 'NORMAL' | 'LARGE' | 'XLARGE';
+  size?: number;  // Numeric font size (12, 18, 24, 36, 48, etc.)
   bold?: boolean;
   underline?: boolean;
   fontType?: 'A' | 'B' | 'C';
+  italic?: boolean;
+  strikethrough?: boolean;
+  doubleStrike?: boolean;
 }
 
 interface ImageOptions {
@@ -220,7 +249,8 @@ interface BarcodeOptions {
   align?: 'LEFT' | 'CENTER' | 'RIGHT';
   height?: number;
   width?: number;
-  textPosition?: 'NONE' | 'ABOVE' | 'BELOW';
+  textPosition?: 'NONE' | 'ABOVE' | 'BELOW' | 'BOTH';
+  fontSize?: number;
 }
 
 interface QRCodeOptions {
@@ -228,6 +258,34 @@ interface QRCodeOptions {
   align?: 'LEFT' | 'CENTER' | 'RIGHT';
   errorLevel?: 'L' | 'M' | 'Q' | 'H';
 }
+```
+
+### Font Size Support
+
+The library supports numeric font sizes with the following mapping:
+
+| Font Size Range | Effect | Multiplier |
+|----------------|--------|-----------|
+| ≤ 12 | Normal size | 0x0 |
+| 13-18 | Small increase | 0x1 |
+| 19-24 | Medium size | 0x2 |
+| 25-36 | Large size | 0x3 |
+| 37-48 | Extra large | 0x4 |
+| > 48 | Maximum size | 0x5 |
+
+**Examples:**
+```typescript
+// Normal size
+await ReactNativePosPrinter.printText('Normal text', { size: 12 });
+
+// Medium size
+await ReactNativePosPrinter.printText('Medium text', { size: 24 });
+
+// Large size
+await ReactNativePosPrinter.printText('Large text', { size: 36 });
+
+// Maximum size
+await ReactNativePosPrinter.printText('Max text', { size: 48 });
 ```
 
 ### Supported Barcode Types
@@ -303,6 +361,11 @@ await ReactNativePosPrinter.printImage(imageBase64, {
    - Verify data format matches barcode type
    - Check size parameters are within printer limits
    - Ensure sufficient paper width for barcode
+
+6. **Font size not working**
+   - Use numeric values (12, 24, 36, 48) instead of string values
+   - Ensure the printer supports the ESC/POS font size commands
+   - Note: iOS implementation may need additional font size command implementation
 
 ## Publishing
 
