@@ -1,6 +1,5 @@
 import { PosPrinter } from '../utils/native';
 import {
-  PrinterDevice,
   PrintOptions,
   TextOptions,
   ImageOptions,
@@ -29,31 +28,43 @@ export class ReactNativePosPrinter {
 
   static async init(options?: PrintOptions): Promise<void> {
     try {
+      if (!PosPrinter) {
+        throw new Error('PosPrinter native module is not available');
+      }
+      
       await PosPrinter.init(options);
     } catch (error) {
       throw new PrinterError(
         PrinterErrorCode.INIT_FAILED,
-        'Failed to initialize printer',
+        `Failed to initialize printer: ${error instanceof Error ? error.message : 'Unknown error'}`,
         error
       );
     }
   }
 
-  static async getDeviceList(): Promise<PrinterDevice[]> {
+  static async getDeviceList(): Promise<ThermalPrinterDevice[]> {
     try {
+      if (!PosPrinter) {
+        throw new Error('PosPrinter native module is not available');
+      }
+      
       const devices = await PosPrinter.getDeviceList();
-      return devices.map((device: ThermalPrinterNativeDevice) => ({
-        name: device.name,
+      return devices.map((device: any) => new ThermalPrinterDevice({
+        name: device.name || 'Unknown Device',
         address: device.address,
-        type: device.type,
-        connected: device.connected,
+        id: device.address,
+        type: device.type?.toUpperCase() || 'BLUETOOTH',
+        connected: device.connected || false,
         rssi: device.rssi,
-        batteryLevel: device.batteryLevel
+        batteryLevel: device.batteryLevel,
+        bondState: device.bondState,
+        deviceClass: device.deviceClass,
+        extra: device.extra
       }));
     } catch (error) {
       throw new PrinterError(
         PrinterErrorCode.DEVICE_LIST_FAILED,
-        'Failed to get device list',
+        `Failed to get device list: ${error instanceof Error ? error.message : 'Unknown error'}`,
         error
       );
     }
@@ -61,7 +72,9 @@ export class ReactNativePosPrinter {
 
   static async connectPrinter(address: string, options?: ConnectionOptions): Promise<ThermalPrinterDevice> {
     try {
-      await PosPrinter.connectPrinter(address, options);
+      const deviceType = options?.type || 'BLUETOOTH';
+      await PosPrinter.connectPrinter(address, deviceType);
+      
       const devices = await PosPrinter.getDeviceList();
       const device = devices.find((d: ThermalPrinterNativeDevice) => d.address === address);
       

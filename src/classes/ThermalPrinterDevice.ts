@@ -25,7 +25,8 @@ export class ThermalPrinterDevice {
 
   async connect(options?: ConnectionOptions): Promise<void> {
     try {
-      await PosPrinter.connectPrinter(this.device.address, options);
+      const deviceType = options?.type || this.device.type;
+      await PosPrinter.connectPrinter(this.device.address, deviceType);
       this.connected = true;
       this.device.connected = true;
       PrinterEventManager.emit(PrinterEvent.DEVICE_CONNECTED, { device: this.device });
@@ -59,11 +60,16 @@ export class ThermalPrinterDevice {
 
   async checkConnectionStatus(): Promise<boolean> {
     try {
-      const connected = await PosPrinter.isConnected();
-      this.connected = connected;
-      this.device.connected = connected;
-      return connected;
+      if (!this.device?.address) {
+        return false;
+      }
+      
+      const isConnected = await PosPrinter.isConnected();
+      this.connected = isConnected;
+      this.device.connected = isConnected;
+      return isConnected;
     } catch (error) {
+      console.warn('Failed to check connection status:', error);
       this.connected = false;
       this.device.connected = false;
       return false;
@@ -72,7 +78,18 @@ export class ThermalPrinterDevice {
 
   async getStatus(): Promise<PrinterStatus> {
     try {
-      return await PosPrinter.getStatus();
+      const rawStatus = await PosPrinter.getStatus();
+      
+      const status: PrinterStatus = {
+        online: rawStatus.online ?? true,
+        paperOut: rawStatus.paperOut ?? false,
+        coverOpen: rawStatus.coverOpen ?? false,
+        cutterError: rawStatus.cutterError ?? false,
+        temperature: rawStatus.temperature ?? 'NORMAL',
+        voltage: rawStatus.voltage ?? 'NORMAL'
+      };
+      
+      return status;
     } catch (error) {
       throw new PrinterError(
         PrinterErrorCode.STATUS_CHECK_FAILED,

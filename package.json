@@ -1,18 +1,16 @@
 {
   "name": "react-native-thermal-pos-printer",
-  "version": "1.4.4",
+  "version": "1.4.30",
   "description": "React Native thermal printer package for POS systems supporting Xprinter and other popular brands",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
   "types": "lib/typescript/commonjs/index.d.ts",
-  "react-native": "src/index",
   "source": "src/index",
   "files": [
     "src",
     "lib",
     "android",
     "ios",
-    "cpp",
     "*.podspec",
     "!lib/typescript/example",
     "!ios/build",
@@ -53,10 +51,7 @@
     "receipt-printer",
     "bluetooth-printer",
     "usb-printer",
-    "wifi-printer",
-    "new-architecture",
-    "turbo-modules",
-    "fabric"
+    "wifi-printer"
   ],
   "repository": {
     "type": "git",
@@ -73,6 +68,7 @@
     "access": "public"
   },
   "devDependencies": {
+    "@react-native-community/cli": "^20.0.0",
     "@react-native/eslint-config": "^0.75.0",
     "@types/jest": "^29.5.5",
     "@types/react": "^19.0.0",
@@ -89,7 +85,6 @@
     "react-native": "0.80.0",
     "react-native-builder-bob": "^0.29.0",
     "release-it": "^17.0.0",
-    "turbo": "^2.0.0",
     "typescript": "^5.0.4"
   },
   "peerDependencies": {
@@ -189,10 +184,5 @@
         }
       ]
     ]
-  },
-  "codegenConfig": {
-    "name": "RNPosPrinterSpec",
-    "type": "modules",
-    "jsSrcsDir": "src"
   }
 }

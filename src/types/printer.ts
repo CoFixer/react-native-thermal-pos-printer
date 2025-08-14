@@ -80,7 +80,8 @@ export interface ThermalPrinterNativeDevice {
 
 export interface ConnectionOptions {
   timeout?: number;
-  encoding?: 'UTF-8' | 'GBK' | 'GB2312' | 'BIG5';
+  encoding?: string;
   delimiter?: string;
   secure?: boolean;
+  type?: 'BLUETOOTH' | 'USB' | 'WIFI'; // Add this
 }

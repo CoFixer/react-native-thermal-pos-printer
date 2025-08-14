@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,12 @@ import {
   StyleSheet,
 } from 'react-native';
 import ReactNativePosPrinter, {
-  PrinterDevice,
-  TextOptions,
-} from 'react-native-thermal-pos-printer';
+  ThermalPrinterDevice,
+} from '../src/index';
 
 const App = () => {
-  const [devices, setDevices] = useState<PrinterDevice[]>([]);
-  const [connectedDevice, setConnectedDevice] = useState<PrinterDevice | null>(null);
+  const [devices, setDevices] = useState<ThermalPrinterDevice[]>([]);
+  const [connectedDevice, setConnectedDevice] = useState<ThermalPrinterDevice | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
@@ -39,17 +38,12 @@ const App = () => {
     }
   };
 
-  const connectToDevice = async (device: PrinterDevice) => {
+  const connectToDevice = async (device: ThermalPrinterDevice) => {
     try {
-      const success = await ReactNativePosPrinter.connectPrinter(
-        device.address,
-        device.type
-      );
-      if (success) {
-        setConnectedDevice(device);
-        setIsConnected(true);
-        Alert.alert('Success', `Connected to ${device.name}`);
-      }
+      await device.connect({ timeout: 5000 });
+      setConnectedDevice(device);
+      setIsConnected(true);
+      Alert.alert('Success', `Connected to ${device.getName()}`);
     } catch (error) {
       Alert.alert('Error', 'Failed to connect to device');
     }
@@ -57,67 +51,48 @@ const App = () => {
 
   const disconnect = async () => {
     try {
-      await ReactNativePosPrinter.disconnectPrinter();
-      setConnectedDevice(null);
-      setIsConnected(false);
-      Alert.alert('Success', 'Disconnected from printer');
+      if (connectedDevice) {
+        await connectedDevice.disconnect();
+        setConnectedDevice(null);
+        setIsConnected(false);
+        Alert.alert('Success', 'Disconnected from printer');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to disconnect');
     }
   };
 
-  const printReceipt = async () => {
-    if (!isConnected) {
+  const printTestReceipt = async () => {
+    if (!isConnected || !connectedDevice) {
       Alert.alert('Error', 'Please connect to a printer first');
       return;
     }
 
     try {
-      // Print header
-      const headerOptions: TextOptions = {
+      await connectedDevice.printText('=== TEST RECEIPT ===', {
         align: 'CENTER',
-        size: 'LARGE',
+        size: 24,
         bold: true,
-      };
-      await ReactNativePosPrinter.printText('RECEIPT', headerOptions);
-      await ReactNativePosPrinter.printText('================================');
-      
-      // Print items
-      await ReactNativePosPrinter.printText('Item 1                    $10.00');
-      await ReactNativePosPrinter.printText('Item 2                    $15.00');
-      await ReactNativePosPrinter.printText('Item 3                     $5.00');
-      await ReactNativePosPrinter.printText('================================');
-      
-      // Print total
-      const totalOptions: TextOptions = {
-        align: 'RIGHT',
-        bold: true,
-      };
-      await ReactNativePosPrinter.printText('TOTAL: $30.00', totalOptions);
-      
-      // Print QR code
-      await ReactNativePosPrinter.printQRCode('https://example.com/receipt/123', {
-        align: 'CENTER',
-        size: 6,
       });
-      
-      // Cut paper
-      await ReactNativePosPrinter.cutPaper();
-      
-      Alert.alert('Success', 'Receipt printed successfully');
+      await connectedDevice.printText('Thank you for your purchase!', {
+        align: 'CENTER'
+      });
+      await connectedDevice.cutPaper();
+      Alert.alert('Success', 'Test receipt printed!');
     } catch (error) {
-      Alert.alert('Error', 'Failed to print receipt');
+      Alert.alert('Error', 'Failed to print');
+      console.error('Print error:', error);
     }
   };
 
-  const renderDevice = ({ item }: { item: PrinterDevice }) => (
+  const renderDevice = ({ item }: { item: ThermalPrinterDevice }) => (
     <TouchableOpacity
       style={styles.deviceItem}
       onPress={() => connectToDevice(item)}
     >
-      <Text style={styles.deviceName}>{item.name}</Text>
-      <Text style={styles.deviceAddress}>{item.address}</Text>
-      <Text style={styles.deviceType}>{item.type}</Text>
+      <Text style={styles.deviceName}>{item.getName()}</Text>
+      <Text style={styles.deviceAddress}>{item.getAddress()}</Text>
+      <Text style={styles.deviceType}>{item.getType()}</Text>
     </TouchableOpacity>
   );
 
@@ -128,28 +103,30 @@ const App = () => {
       {isConnected && connectedDevice && (
         <View style={styles.connectedDevice}>
           <Text style={styles.connectedText}>
-            Connected to: {connectedDevice.name}
+            Connected to: {connectedDevice.getName()}
           </Text>
           <TouchableOpacity style={styles.button} onPress={disconnect}>
             <Text style={styles.buttonText}>Disconnect</Text>
           </TouchableOpacity>
         </View>
       )}
-      
+
+      <Text style={styles.subtitle}>Available Devices:</Text>
+      <FlatList
+        style={styles.deviceList}
+        data={devices}
+        keyExtractor={(item) => item.getAddress()}
+        renderItem={renderDevice}
+        refreshing={false}
+        onRefresh={loadDevices}
+      />
+
       {isConnected && (
-        <TouchableOpacity style={styles.printButton} onPress={printReceipt}>
+        <TouchableOpacity style={styles.printButton} onPress={printTestReceipt}>
           <Text style={styles.buttonText}>Print Test Receipt</Text>
         </TouchableOpacity>
       )}
-      
-      <Text style={styles.subtitle}>Available Devices:</Text>
-      <FlatList
-        data={devices}
-        renderItem={renderDevice}
-        keyExtractor={(item) => item.address}
-        style={styles.deviceList}
-      />
-      
+
       <TouchableOpacity style={styles.button} onPress={loadDevices}>
         <Text style={styles.buttonText}>Refresh Devices</Text>
       </TouchableOpacity>

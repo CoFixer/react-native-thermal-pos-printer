@@ -1,66 +1,36 @@
-# react-native-thermal-pos-printer
+# React Native Thermal POS Printer
 
-A comprehensive React Native package for thermal printer integration, supporting popular brands like Xprinter and other ESC/POS compatible printers with advanced device management.
+A React Native library for thermal POS printers with support for Bluetooth, USB, WiFi, and Ethernet connections. Features object-oriented device management and comprehensive printing capabilities.
 
 ## Features
 
-- 🖨️ Support for thermal POS printers (Xprinter, Epson, Star, etc.)
-- 📱 Cross-platform (iOS & Android)
-- 🔗 Multiple connection types (Bluetooth, USB, WiFi, Ethernet)
-- 🎯 **Object-oriented device management** with individual device instances
-- 🔍 **Device discovery and auto-linking** for React Native 0.60+
-- 📄 Text printing with advanced formatting options
-- 🖼️ Base64 image printing with automatic resizing
-- 📊 Comprehensive barcode support (CODE128, CODE39, EAN13, UPC-A, etc.)
-- 🔲 QR code printing with customizable size and error correction
-- 💰 Cash drawer control
-- ✂️ Paper cutting
-- 🔧 Raw ESC/POS command support
-- 🎨 **Numeric font size control (12, 24, 36, 48, etc.) and text alignment**
-- 📐 Image scaling and positioning
-- 🔄 **Device-specific connection management**
-- 📊 **Individual device status monitoring**
+- 🖨️ **Multiple Printer Support**: Xprinter, Epson, Star Micronics, Citizen, Bixolon, and any ESC/POS compatible printer
+- 🔗 **Multiple Connection Types**: Bluetooth, USB, WiFi, Ethernet
+- 📱 **Object-Oriented API**: New device-centric approach with backward compatibility
+- 🎯 **Device Management**: Connect to multiple printers simultaneously
+- 📄 **Rich Printing**: Text formatting, images, QR codes, barcodes
+- 🔧 **Auto-linking**: React Native 0.60+ auto-linking support
+- 📊 **Device Status**: Real-time printer status monitoring
+- 🛡️ **Type Safety**: Full TypeScript support
+- 🔍 **Device Discovery**: Automatic Bluetooth device discovery
+- ⚡ **Performance**: Optimized for speed and reliability
 
 ## Installation
+
+### React Native 0.60+ (Auto-linking)
 
 ```bash
 npm install react-native-thermal-pos-printer
 ```
 
-### React Native 0.60+ (Auto-linking)
-
-For React Native 0.60 and above, the package will be automatically linked. Just run:
+### Manual Linking (React Native < 0.60)
 
 ```bash
-# iOS
-cd ios && pod install
-
-# Android - Clean and rebuild
-cd android && ./gradlew clean && cd ..
-npx react-native run-android
+npm install react-native-thermal-pos-printer
+react-native link react-native-thermal-pos-printer
 ```
 
-### Manual Linking (if auto-linking fails)
-
-If auto-linking doesn't work, add this to your main app's `react-native.config.js`:
-
-```javascript
-module.exports = {
-  dependencies: {
-    'react-native-thermal-pos-printer': {
-      platforms: {
-        android: {
-          sourceDir: '../node_modules/react-native-thermal-pos-printer/android/',
-          packageImportPath: 'import com.reactnativeposprinter.PosPrinterPackage;',
-        },
-        ios: {
-          podspecPath: '../node_modules/react-native-thermal-pos-printer/react-native-pos-printer.podspec',
-        },
-      },
-    },
-  },
-};
-```
+## Setup
 
 ### iOS Setup
 
@@ -72,24 +42,24 @@ cd ios && pod install
 2. Add Bluetooth permissions to `Info.plist`:
 ```xml
 <key>NSBluetoothAlwaysUsageDescription</key>
-<string>This app needs Bluetooth access to connect to printers</string>
+<string>This app needs Bluetooth access to connect to thermal printers</string>
 <key>NSBluetoothPeripheralUsageDescription</key>
-<string>This app needs Bluetooth access to connect to printers</string>
+<string>This app needs Bluetooth access to connect to thermal printers</string>
 ```
 
 ### Android Setup
 
-1. Add permissions to `android/app/src/main/AndroidManifest.xml`:
+1. Add Bluetooth permissions to `android/app/src/main/AndroidManifest.xml`:
 ```xml
-<!-- For Android 12+ -->
-<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
-
-<!-- For older Android versions -->
 <uses-permission android:name="android.permission.BLUETOOTH" />
 <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+<!-- For Android 12+ -->
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+<uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 ```
 
 ## Usage
