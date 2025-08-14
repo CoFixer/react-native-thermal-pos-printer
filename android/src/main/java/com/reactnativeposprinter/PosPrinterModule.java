@@ -3,16 +3,13 @@ package com.reactnativeposprinter;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
-import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Build;
 import android.util.Base64;
 import android.util.Log;
-
 import androidx.annotation.NonNull;
-
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -23,14 +20,11 @@ import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.module.annotations.ReactModule;
-
+import com.facebook.react.modules.core.DeviceEventManagerModule;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Set;
 import java.util.UUID;
-
-import com.facebook.react.modules.core.DeviceEventManagerModule;
-import com.facebook.react.bridge.ReactContext;
 
 @ReactModule(name = PosPrinterModule.NAME)
 public class PosPrinterModule extends ReactContextBaseJavaModule {
@@ -57,6 +51,11 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
     private static final byte[] ESC_SIZE_LARGE = {0x1D, 0x21, 0x11};
     private static final byte[] ESC_CASH_DRAWER = {0x1B, 0x70, 0x00, 0x19, (byte) 0xFA};
 
+    public static final String EVENT_DEVICE_CONNECTED = "DEVICE_CONNECTED";
+    public static final String EVENT_DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED";
+    public static final String EVENT_DEVICE_CONNECTION_LOST = "DEVICE_CONNECTION_LOST";
+    public static final String EVENT_PRINT_STATUS = "PRINT_STATUS";
+
     public PosPrinterModule(ReactApplicationContext reactContext, PosPrinterConfig config) {
         super(reactContext);
         this.config = config;
@@ -78,7 +77,7 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             }
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("INIT_ERROR", e.getMessage());
+            promise.reject("INIT_FAILED", e.getMessage()); 
         }
     }
 
@@ -93,11 +92,10 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             }
             
             if (!bluetoothAdapter.isEnabled()) {
-                promise.reject("BLUETOOTH_DISABLED", "Bluetooth is not enabled");
+                promise.reject("BLUETOOTH_NOT_ENABLED", "Bluetooth is not enabled");
                 return;
             }
             
-            // Check for permissions (Android 12+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (getCurrentActivity().checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                     promise.reject("PERMISSION_DENIED", "BLUETOOTH_CONNECT permission is required");
@@ -124,7 +122,7 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             
             promise.resolve(deviceList);
         } catch (Exception e) {
-            promise.reject("GET_DEVICES_ERROR", e.getMessage());
+            promise.reject("DEVICE_LIST_FAILED", e.getMessage());
         }
     }
 
@@ -134,17 +132,12 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             if ("BLUETOOTH".equals(type)) {
                 connectBluetoothPrinter(address, promise);
             } else {
-                promise.reject("UNSUPPORTED_TYPE", "Connection type not supported: " + type);
+                promise.reject("INVALID_PARAMETER", "Connection type not supported: " + type);
             }
         } catch (Exception e) {
-            promise.reject("CONNECT_ERROR", e.getMessage());
+            promise.reject("CONNECTION_FAILED", e.getMessage());
         }
     }
-
-    public static final String EVENT_DEVICE_CONNECTED = "DEVICE_CONNECTED";
-    public static final String EVENT_DEVICE_DISCONNECTED = "DEVICE_DISCONNECTED";
-    public static final String EVENT_DEVICE_CONNECTION_LOST = "DEVICE_CONNECTION_LOST";
-    public static final String EVENT_PRINT_STATUS = "PRINT_STATUS";
     
     private void sendEvent(String eventName, WritableMap params) {
         getReactApplicationContext()
@@ -155,21 +148,28 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
     private void connectBluetoothPrinter(String address, Promise promise) {
         try {
             if (bluetoothSocket != null && bluetoothSocket.isConnected()) {
-                bluetoothSocket.close();
+                try {
+                    outputStream.close();
+                    bluetoothSocket.close();
+                } catch (IOException e) {
+                    Log.w(TAG, "Error closing existing connection: " + e.getMessage());
+                }
             }
             
             BluetoothDevice device = bluetoothAdapter.getRemoteDevice(address);
             bluetoothSocket = device.createRfcommSocketToServiceRecord(PRINTER_UUID);
             bluetoothSocket.connect();
             outputStream = bluetoothSocket.getOutputStream();
-            isConnected = true;
             
             outputStream.write(ESC_INIT);
             outputStream.flush();
             
+            isConnected = true;
+            
             WritableMap eventData = Arguments.createMap();
             eventData.putString("address", address);
             eventData.putString("name", device.getName());
+            eventData.putString("status", "connected");
             sendEvent(EVENT_DEVICE_CONNECTED, eventData);
             
             promise.resolve(true);
@@ -180,38 +180,50 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             eventData.putString("address", address);
             eventData.putString("error", e.getMessage());
             sendEvent(EVENT_DEVICE_CONNECTION_LOST, eventData);
+            
             promise.reject("CONNECTION_FAILED", e.getMessage(), e);
         }
     }
-}
 
     @ReactMethod
     public void disconnectPrinter(Promise promise) {
         try {
-            if (bluetoothSocket != null && bluetoothSocket.isConnected()) {
+            String address = null;
+            if (bluetoothSocket != null && bluetoothSocket.getRemoteDevice() != null) {
+                address = bluetoothSocket.getRemoteDevice().getAddress();
+            }
+            
+            if (outputStream != null) {
                 outputStream.close();
+                outputStream = null;
+            }
+            
+            if (bluetoothSocket != null && bluetoothSocket.isConnected()) {
                 bluetoothSocket.close();
             }
+            bluetoothSocket = null;
             isConnected = false;
+            
+            if (address != null) {
+                WritableMap eventData = Arguments.createMap();
+                eventData.putString("address", address);
+                sendEvent(EVENT_DEVICE_DISCONNECTED, eventData);
+            }
+            
             promise.resolve(true);
         } catch (IOException e) {
-            promise.reject("DISCONNECT_ERROR", e.getMessage());
+            promise.reject("DISCONNECTION_FAILED", e.getMessage());
         }
-    }
-
-    @ReactMethod
-    public void isConnected(Promise promise) {
-        promise.resolve(isConnected && bluetoothSocket != null && bluetoothSocket.isConnected());
     }
 
     @ReactMethod
     public void printText(String text, ReadableMap options, Promise promise) {
         try {
-            if (!isConnected || outputStream == null) {
+            if (!isConnected) {
                 promise.reject("NOT_CONNECTED", "Printer is not connected");
                 return;
             }
-
+    
             applyTextFormatting(options);
             
             outputStream.write(text.getBytes("UTF-8"));
@@ -222,14 +234,14 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("PRINT_TEXT_ERROR", e.getMessage());
+            promise.reject("PRINT_FAILED", e.getMessage());
         }
     }
 
     @ReactMethod
     public void printImage(String base64, ReadableMap options, Promise promise) {
         try {
-            if (!isConnected || outputStream == null) {
+            if (!isConnected) {
                 promise.reject("NOT_CONNECTED", "Printer is not connected");
                 return;
             }
@@ -248,32 +260,32 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("PRINT_IMAGE_ERROR", e.getMessage());
+            promise.reject("PRINT_FAILED", e.getMessage());
         }
     }
 
     @ReactMethod
     public void printQRCode(String data, ReadableMap options, Promise promise) {
         try {
-            if (!isConnected || outputStream == null) {
+            if (!isConnected) {
                 promise.reject("NOT_CONNECTED", "Printer is not connected");
                 return;
             }
-
+    
             byte[] qrCommands = generateQRCodeCommands(data, options);
             outputStream.write(qrCommands);
             outputStream.flush();
             
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("PRINT_QRCODE_ERROR", e.getMessage());
+            promise.reject("PRINT_FAILED", e.getMessage());
         }
     }
 
     @ReactMethod
     public void cutPaper(Promise promise) {
         try {
-            if (!isConnected || outputStream == null) {
+            if (!isConnected) {
                 promise.reject("NOT_CONNECTED", "Printer is not connected");
                 return;
             }
@@ -282,14 +294,14 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             outputStream.flush();
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("CUT_PAPER_ERROR", e.getMessage());
+            promise.reject("HARDWARE_ERROR", e.getMessage());
         }
     }
 
     @ReactMethod
     public void openCashDrawer(Promise promise) {
         try {
-            if (!isConnected || outputStream == null) {
+            if (!isConnected) {
                 promise.reject("NOT_CONNECTED", "Printer is not connected");
                 return;
             }
@@ -298,14 +310,14 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             outputStream.flush();
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("CASH_DRAWER_ERROR", e.getMessage());
+            promise.reject("HARDWARE_ERROR", e.getMessage());
         }
     }
 
     @ReactMethod
     public void printRaw(ReadableArray data, Promise promise) {
         try {
-            if (!isConnected || outputStream == null) {
+            if (!isConnected) {
                 promise.reject("NOT_CONNECTED", "Printer is not connected");
                 return;
             }
@@ -319,86 +331,14 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             outputStream.flush();
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("PRINT_RAW_ERROR", e.getMessage());
+            promise.reject("PRINT_FAILED", e.getMessage());
         }
-    }
-
-    private void applyTextFormatting(ReadableMap options) throws IOException {
-        if (options.hasKey("align")) {
-            String align = options.getString("align");
-            switch (align) {
-                case "CENTER":
-                    outputStream.write(ESC_ALIGN_CENTER);
-                    break;
-                case "RIGHT":
-                    outputStream.write(ESC_ALIGN_RIGHT);
-                    break;
-                default:
-                    outputStream.write(ESC_ALIGN_LEFT);
-                    break;
-            }
-        }
-
-        if (options.hasKey("bold") && options.getBoolean("bold")) {
-            outputStream.write(ESC_BOLD_ON);
-        }
-
-        if (options.hasKey("underline") && options.getBoolean("underline")) {
-            outputStream.write(ESC_UNDERLINE_ON);
-        }
-
-        if (options.hasKey("size")) {
-            if (options.getType("size") == com.facebook.react.bridge.ReadableType.Number) {
-                int fontSize = options.getInt("size");
-                byte[] sizeCommand = generateFontSizeCommand(fontSize);
-                outputStream.write(sizeCommand);
-            } else {
-                String size = options.getString("size");
-                if ("LARGE".equals(size) || "XLARGE".equals(size)) {
-                    outputStream.write(ESC_SIZE_LARGE);
-                } else {
-                    outputStream.write(ESC_SIZE_NORMAL);
-                }
-            }
-        }
-    }
-
-    private byte[] generateFontSizeCommand(int fontSize) {
-        int widthMultiplier = 0;
-        int heightMultiplier = 0;
-        
-        if (fontSize <= 12) {
-            widthMultiplier = 0;
-            heightMultiplier = 0;
-        } else if (fontSize <= 18) {
-            widthMultiplier = 1;
-            heightMultiplier = 1;
-        } else if (fontSize <= 24) {
-            widthMultiplier = 2;
-            heightMultiplier = 2;
-        } else if (fontSize <= 36) {
-            widthMultiplier = 3;
-            heightMultiplier = 3;
-        } else if (fontSize <= 48) {
-            widthMultiplier = 4;
-            heightMultiplier = 4;
-        } else {
-            widthMultiplier = 5;
-            heightMultiplier = 5;
-        }
-        
-        widthMultiplier = Math.min(widthMultiplier, 7);
-        heightMultiplier = Math.min(heightMultiplier, 7);
-        
-        byte sizeValue = (byte) ((widthMultiplier << 4) | heightMultiplier);
-        
-        return new byte[]{0x1D, 0x21, sizeValue};
     }
 
     @ReactMethod
     public void setFontSize(int fontSize, Promise promise) {
         try {
-            if (!isConnected || outputStream == null) {
+            if (!isConnected) {
                 promise.reject("NOT_CONNECTED", "Printer is not connected");
                 return;
             }
@@ -409,14 +349,14 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("SET_FONT_SIZE_ERROR", e.getMessage());
+            promise.reject("INVALID_PARAMETER", e.getMessage());
         }
     }
 
     @ReactMethod
     public void resetFontSettings(Promise promise) {
         try {
-            if (!isConnected || outputStream == null) {
+            if (!isConnected) {
                 promise.reject("NOT_CONNECTED", "Printer is not connected");
                 return;
             }
@@ -424,7 +364,60 @@ public class PosPrinterModule extends ReactContextBaseJavaModule {
             resetFormatting();
             promise.resolve(true);
         } catch (Exception e) {
-            promise.reject("RESET_FONT_ERROR", e.getMessage());
+            promise.reject("HARDWARE_ERROR", e.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void isConnected(Promise promise) {
+        try {
+            boolean connected = isConnected && bluetoothSocket != null && bluetoothSocket.isConnected();
+            promise.resolve(connected);
+        } catch (Exception e) {
+            promise.reject("STATUS_CHECK_FAILED", e.getMessage());
+        }
+    }
+
+    private void applyTextFormatting(ReadableMap options) throws IOException {
+        if (options == null) return;
+        
+        if (options.hasKey("align")) {
+            String align = options.getString("align");
+            byte[] alignCommand = getAlignmentCommand(align);
+            outputStream.write(alignCommand);
+        }
+        
+        if (options.hasKey("bold") && options.getBoolean("bold")) {
+            outputStream.write(ESC_BOLD_ON);
+        }
+        
+        if (options.hasKey("underline") && options.getBoolean("underline")) {
+            outputStream.write(ESC_UNDERLINE_ON);
+        }
+        
+        if (options.hasKey("fontSize")) {
+            int fontSize = options.getInt("fontSize");
+            byte[] sizeCommand = generateFontSizeCommand(fontSize);
+            outputStream.write(sizeCommand);
+        }
+    }
+
+    private byte[] generateFontSizeCommand(int fontSize) {
+        switch (fontSize) {
+            case 0:
+                return ESC_SIZE_NORMAL;
+            case 1:
+                return new byte[]{0x1D, 0x21, 0x01};
+            case 2:
+                return new byte[]{0x1D, 0x21, 0x10};
+            case 3:
+                return ESC_SIZE_LARGE;
+            case 4:
+                return new byte[]{0x1D, 0x21, 0x22};
+            case 5:
+                return new byte[]{0x1D, 0x21, 0x33};
+            default:
+                return ESC_SIZE_NORMAL;
         }
     }
 

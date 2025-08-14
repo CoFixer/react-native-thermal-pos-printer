@@ -17,6 +17,16 @@ import { ThermalPrinterDevice } from './ThermalPrinterDevice';
 export class ReactNativePosPrinter {
   private static currentDevice: ThermalPrinterDevice | null = null;
 
+  private static async ensureConnected(): Promise<void> {
+    const connected = await this.isConnected();
+    if (!connected) {
+      throw new PrinterError(
+        PrinterErrorCode.NOT_CONNECTED,
+        'No printer connected. Please connect a printer first.'
+      );
+    }
+  }
+
   static async init(options?: PrintOptions): Promise<void> {
     try {
       await PosPrinter.init(options);
@@ -99,7 +109,7 @@ export class ReactNativePosPrinter {
 
   static async sendRawCommand(command: number[]): Promise<void> {
     try {
-      await PosPrinter.printRaw(command);
+      await PosPrinter.sendRawCommand(command);
     } catch (error) {
       throw new PrinterError(
         PrinterErrorCode.PRINT_FAILED,
@@ -141,6 +151,8 @@ export class ReactNativePosPrinter {
   }
 
   static async printText(text: string, options?: TextOptions): Promise<void> {
+    await this.ensureConnected();
+    
     if (!text || text.trim().length === 0) {
       throw new PrinterError(
         PrinterErrorCode.INVALID_TEXT,
@@ -159,50 +171,9 @@ export class ReactNativePosPrinter {
     }
   }
 
-  static async printFormattedText(
-    text: string, 
-    options?: TextOptions & { useRawCommands?: boolean }
-  ): Promise<void> {
-    if (!text || text.trim().length === 0) {
-      throw new PrinterError(
-        PrinterErrorCode.INVALID_TEXT,
-        'Text cannot be empty'
-      );
-    }
-
-    try {
-      if (options?.useRawCommands) {
-        if (options.align) {
-          await this.setAlignment(options.align);
-        }
-        if (options.bold) {
-          await this.setBold(true);
-        }
-        if (options.underline) {
-          await this.setUnderline(true);
-        }
-        
-        await PosPrinter.printText(text, { ...options, useRawCommands: false });
-        
-        if (options.bold) {
-          await this.setBold(false);
-        }
-        if (options.underline) {
-          await this.setUnderline(false);
-        }
-      } else {
-        await PosPrinter.printText(text, options);
-      }
-    } catch (error) {
-      throw new PrinterError(
-        PrinterErrorCode.PRINT_FAILED,
-        'Failed to print formatted text',
-        error
-      );
-    }
-  }
-
   static async printImage(imageUri: string, options?: ImageOptions): Promise<void> {
+    await this.ensureConnected();
+    
     if (!imageUri) {
       throw new PrinterError(
         PrinterErrorCode.INVALID_PARAMETER,
@@ -216,6 +187,20 @@ export class ReactNativePosPrinter {
       throw new PrinterError(
         PrinterErrorCode.PRINT_FAILED,
         'Failed to print image',
+        error
+      );
+    }
+  }
+
+  static async cutPaper(): Promise<void> {
+    await this.ensureConnected();
+    
+    try {
+      await this.sendRawCommand([...ESCPOSCommands.CUT_PAPER]);
+    } catch (error) {
+      throw new PrinterError(
+        PrinterErrorCode.PRINT_FAILED,
+        'Failed to cut paper',
         error
       );
     }
@@ -259,18 +244,6 @@ export class ReactNativePosPrinter {
     }
   }
 
-  static async cutPaper(): Promise<void> {
-    try {
-      await this.sendRawCommand([...ESCPOSCommands.CUT_PAPER]);
-    } catch (error) {
-      throw new PrinterError(
-        PrinterErrorCode.PRINT_FAILED,
-        'Failed to cut paper',
-        error
-      );
-    }
-  }
-
   static async openCashDrawer(): Promise<void> {
     try {
       await PosPrinter.openCashDrawer();
@@ -292,7 +265,7 @@ export class ReactNativePosPrinter {
     }
 
     try {
-      await PosPrinter.printRaw(data);
+      await this.sendRawCommand(data);
     } catch (error) {
       throw new PrinterError(
         PrinterErrorCode.PRINT_FAILED,

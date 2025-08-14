@@ -20,12 +20,14 @@ export class ThermalPrinterDevice {
 
   constructor(device: ThermalPrinterNativeDevice) {
     this.device = device;
+    this.connected = device.connected || false;
   }
 
   async connect(options?: ConnectionOptions): Promise<void> {
     try {
       await PosPrinter.connectPrinter(this.device.address, options);
       this.connected = true;
+      this.device.connected = true;
       PrinterEventManager.emit(PrinterEvent.DEVICE_CONNECTED, { device: this.device });
     } catch (error) {
       const printerError = new PrinterError(
@@ -42,6 +44,7 @@ export class ThermalPrinterDevice {
     try {
       await PosPrinter.disconnectPrinter();
       this.connected = false;
+      this.device.connected = false;
       PrinterEventManager.emit(PrinterEvent.DEVICE_DISCONNECTED, { device: this.device });
     } catch (error) {
       const printerError = new PrinterError(
@@ -51,6 +54,19 @@ export class ThermalPrinterDevice {
       );
       PrinterEventManager.emit(PrinterEvent.PRINT_FAILED, { error: printerError });
       throw printerError;
+    }
+  }
+
+  async checkConnectionStatus(): Promise<boolean> {
+    try {
+      const connected = await PosPrinter.isConnected();
+      this.connected = connected;
+      this.device.connected = connected;
+      return connected;
+    } catch (error) {
+      this.connected = false;
+      this.device.connected = false;
+      return false;
     }
   }
 
@@ -67,7 +83,8 @@ export class ThermalPrinterDevice {
   }
 
   async sendRawCommand(command: number[]): Promise<void> {
-    if (!this.connected) {
+    const connected = await this.checkConnectionStatus();
+    if (!connected) {
       throw new PrinterError(
         PrinterErrorCode.NOT_CONNECTED,
         'Device not connected'
@@ -75,7 +92,7 @@ export class ThermalPrinterDevice {
     }
 
     try {
-      await PosPrinter.printRaw(command);
+      await PosPrinter.sendRawCommand(command);
     } catch (error) {
       throw new PrinterError(
         PrinterErrorCode.PRINT_FAILED,
