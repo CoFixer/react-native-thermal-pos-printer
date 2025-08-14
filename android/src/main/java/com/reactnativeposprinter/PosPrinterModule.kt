@@ -297,10 +297,10 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
     
     private fun applyTextFormatting(options: ReadableMap, stream: OutputStream) {
         if (options.hasKey("align")) {
-            when (options.getString("align")?.lowercase()) {
-                "left" -> stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
-                "center" -> stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
-                "right" -> stream.write(ESC_COMMANDS["ALIGN_RIGHT"]!!)
+            when (options.getString("align")?.uppercase()) {
+                "LEFT" -> stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+                "CENTER" -> stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
+                "RIGHT" -> stream.write(ESC_COMMANDS["ALIGN_RIGHT"]!!)
             }
         }
         
@@ -313,26 +313,59 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
         }
         
         if (options.hasKey("size")) {
-            val size = options.getString("size")
-            when {
-                size == "large" -> stream.write(ESC_COMMANDS["SIZE_LARGE"]!!)
-                size?.toIntOrNull() != null -> {
-                    val sizeValue = size.toInt()
-                    when {
-                        sizeValue >= 24 -> stream.write(ESC_COMMANDS["SIZE_LARGE"]!!)
-                        else -> stream.write(ESC_COMMANDS["SIZE_NORMAL"]!!)
+            val sizeValue = when (options.getType("size")) {
+                ReadableType.Number -> {
+                    val pixelSize = options.getInt("size")
+                    FontSizeConstants.getPixelBasedSize(pixelSize)
+                }
+                ReadableType.String -> {
+                    when (options.getString("size")?.uppercase()) {
+                        "TINY" -> FontSizeConstants.getPixelBasedSize(8)
+                        "SMALL" -> FontSizeConstants.getPixelBasedSize(10)
+                        "NORMAL" -> FontSizeConstants.getPixelBasedSize(12)
+                        "MEDIUM" -> FontSizeConstants.getPixelBasedSize(16)
+                        "LARGE" -> FontSizeConstants.getPixelBasedSize(24)
+                        "XLARGE" -> FontSizeConstants.getPixelBasedSize(36)
+                        "XXLARGE" -> FontSizeConstants.getPixelBasedSize(48)
+                        else -> 0x00
                     }
                 }
-                else -> stream.write(ESC_COMMANDS["SIZE_NORMAL"]!!)
+                else -> 0x00
             }
+            stream.write(byteArrayOf(0x1D, 0x21, sizeValue.toByte()))
         }
         
         if (options.hasKey("fontType")) {
-            val fontType = options.getString("fontType")
-            when (fontType?.uppercase()) {
+            when (options.getString("fontType")?.uppercase()) {
                 "A" -> stream.write(byteArrayOf(0x1B, 0x4D, 0x00))
                 "B" -> stream.write(byteArrayOf(0x1B, 0x4D, 0x01))
                 "C" -> stream.write(byteArrayOf(0x1B, 0x4D, 0x02))
+            }
+        }
+        
+        if (options.hasKey("italic") && options.getBoolean("italic")) {
+            stream.write(byteArrayOf(0x1B, 0x34, 0x01))
+        }
+        
+        if (options.hasKey("strikethrough") && options.getBoolean("strikethrough")) {
+            stream.write(byteArrayOf(0x1B, 0x2D, 0x02))
+        }
+        
+        if (options.hasKey("doubleStrike") && options.getBoolean("doubleStrike")) {
+            stream.write(byteArrayOf(0x1B, 0x47, 0x01))
+        }
+        
+        if (options.hasKey("invert") && options.getBoolean("invert")) {
+            stream.write(byteArrayOf(0x1D, 0x42, 0x01))
+        }
+        
+        if (options.hasKey("rotate")) {
+            val rotation = options.getInt("rotate")
+            when (rotation) {
+                90 -> stream.write(byteArrayOf(0x1B, 0x56, 0x01))
+                180 -> stream.write(byteArrayOf(0x1B, 0x7B, 0x01))
+                270 -> stream.write(byteArrayOf(0x1B, 0x56, 0x01, 0x1B, 0x7B, 0x01))
+                else -> stream.write(byteArrayOf(0x1B, 0x56, 0x00))
             }
         }
     }

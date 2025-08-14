@@ -73,7 +73,7 @@ import { ReactNativePosPrinter, ThermalPrinterDevice } from 'react-native-therma
 await ReactNativePosPrinter.init();
 
 // Get available devices as ThermalPrinterDevice instances
-const devices: ThermalPrinterDevice[] = await ReactNativePosPrinter.getDevices();
+const devices: ThermalPrinterDevice[] = await ReactNativePosPrinter.getDeviceList();
 console.log('Available devices:', devices);
 
 // Connect to a specific device
@@ -148,7 +148,7 @@ await ReactNativePosPrinter.cutPaper();
 
 ```typescript
 // Multiple device management
-const devices = await ReactNativePosPrinter.getDevices();
+const devices = await ReactNativePosPrinter.getDeviceList();
 const connectedDevices: ThermalPrinterDevice[] = [];
 
 // Connect to multiple devices
@@ -297,7 +297,7 @@ Get printer status for this specific device.
 #### `init(): Promise<boolean>`
 Initialize the printer module.
 
-#### `getDevices(): Promise<ThermalPrinterDevice[]>`
+#### `getDeviceList(): Promise<ThermalPrinterDevice[]>`
 Get list of available devices as ThermalPrinterDevice instances.
 
 #### `getDevice(address: string): Promise<ThermalPrinterDevice | null>`
@@ -500,7 +500,7 @@ await ReactNativePosPrinter.disconnectPrinter();
 **After (Recommended):**
 ```typescript
 // New way
-const devices = await ReactNativePosPrinter.getDevices();
+const devices = await ReactNativePosPrinter.getDeviceList();
 const printer = devices[0];
 await printer.connect();
 await printer.printText('Hello World!');
