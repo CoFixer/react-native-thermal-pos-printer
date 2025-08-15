@@ -163,6 +163,36 @@ export class ReactNativePosPrinter {
     await this.sendRawCommand([...ESCPOSCommands.FORM_FEED]);
   }
 
+  static async newLine(lines: number = 1): Promise<void> {
+    await this.ensureConnected();
+    
+    if (lines < 1) {
+      throw new PrinterError(
+        PrinterErrorCode.INVALID_PARAMETER,
+        'Number of lines must be at least 1'
+      );
+    }
+
+    if (lines > 10) {
+      throw new PrinterError(
+        PrinterErrorCode.INVALID_PARAMETER,
+        'Number of lines cannot exceed 10 for performance reasons'
+      );
+    }
+
+    try {
+      for (let i = 0; i < lines; i++) {
+        await this.feedLine();
+      }
+    } catch (error) {
+      throw new PrinterError(
+        PrinterErrorCode.PRINT_FAILED,
+        `Failed to add new lines (${lines})`,
+        error
+      );
+    }
+  }
+
   static async printText(text: string, options?: TextOptions): Promise<void> {
     await this.ensureConnected();
     

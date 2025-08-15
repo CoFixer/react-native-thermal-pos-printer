@@ -1,0 +1,42 @@
+package com.reactnativeposprinter
+
+object EscPosCommands {
+    val INIT = byteArrayOf(0x1B, 0x40)
+    val CUT = byteArrayOf(0x1D, 0x56, 0x00)
+    val CASH_DRAWER = byteArrayOf(0x1B, 0x70, 0x00, 0x19, 0xFA.toByte())
+    
+    object Alignment {
+        val LEFT = byteArrayOf(0x1B, 0x61, 0x00)
+        val CENTER = byteArrayOf(0x1B, 0x61, 0x01)
+        val RIGHT = byteArrayOf(0x1B, 0x61, 0x02)
+    }
+    
+    object TextStyle {
+        val BOLD_ON = byteArrayOf(0x1B, 0x45, 0x01)
+        val BOLD_OFF = byteArrayOf(0x1B, 0x45, 0x00)
+        val UNDERLINE_ON = byteArrayOf(0x1B, 0x2D, 0x01)
+        val UNDERLINE_OFF = byteArrayOf(0x1B, 0x2D, 0x00)
+        val ITALIC_ON = byteArrayOf(0x1B, 0x34, 0x01)
+        val STRIKETHROUGH = byteArrayOf(0x1B, 0x2D, 0x02)
+        val DOUBLE_STRIKE = byteArrayOf(0x1B, 0x47, 0x01)
+        val INVERT = byteArrayOf(0x1D, 0x42, 0x01)
+    }
+    
+    object FontType {
+        val A = byteArrayOf(0x1B, 0x4D, 0x00)
+        val B = byteArrayOf(0x1B, 0x4D, 0x01)
+        val C = byteArrayOf(0x1B, 0x4D, 0x02)
+    }
+    
+    object Rotation {
+        val NORMAL = byteArrayOf(0x1B, 0x56, 0x00)
+        val ROTATE_90 = byteArrayOf(0x1B, 0x56, 0x01)
+        val ROTATE_180 = byteArrayOf(0x1B, 0x7B, 0x01)
+        val ROTATE_270 = byteArrayOf(0x1B, 0x56, 0x01, 0x1B, 0x7B, 0x01)
+    }
+    
+    object Size {
+        val NORMAL = byteArrayOf(0x1D, 0x21, 0x00)
+        val LARGE = byteArrayOf(0x1D, 0x21, 0x11)
+    }
+}

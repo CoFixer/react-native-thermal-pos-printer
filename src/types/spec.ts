@@ -8,6 +8,7 @@ export interface Spec {
   isConnected(): Promise<boolean>;
   printText(text: string, options?: Record<string, any>): Promise<boolean>;
   printImage(base64Image: string, options?: Record<string, any>): Promise<boolean>;
+  printBitmap(base64Data: string): Promise<boolean>;
   printBarcode(data: string, type: string, options?: Record<string, any>): Promise<boolean>;
   printQRCode(data: string, options?: Record<string, any>): Promise<boolean>;
   cutPaper(): Promise<boolean>;

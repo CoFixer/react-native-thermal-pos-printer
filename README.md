@@ -338,6 +338,20 @@ Cut paper (legacy method).
 #### `openCashDrawer(): Promise<boolean>`
 Open cash drawer (legacy method).
 
+#### `newLine(lines?: number): Promise<void>`
+Add vertical spacing by printing line feeds. The `lines` parameter specifies the number of line feeds to print (default: 1, range: 1-10).
+
+```typescript
+// Add single line feed
+await ReactNativePosPrinter.newLine();
+
+// Add multiple line feeds for more spacing
+await ReactNativePosPrinter.newLine(3);
+
+// Maximum allowed lines
+await ReactNativePosPrinter.newLine(10);
+```
+
 ### Types
 
 ```typescript

@@ -17,6 +17,7 @@ const PosPrinterModule: Spec = {
   isConnected: () => PosPrinter.isConnected(),
   printText: (text, options) => PosPrinter.printText(text, options),
   printImage: (base64Image, options) => PosPrinter.printImage(base64Image, options),
+  printBitmap: (base64Data) => PosPrinter.printBitmap(base64Data),
   printBarcode: (data, type, options) => PosPrinter.printBarcode(data, type, options),
   printQRCode: (data, options) => PosPrinter.printQRCode(data, options),
   cutPaper: () => PosPrinter.cutPaper(),

@@ -1,7 +1,6 @@
 @file:Suppress("DEPRECATION")
 package com.reactnativeposprinter
 
-import android.Manifest
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothSocket
 import android.graphics.Bitmap
@@ -18,7 +17,8 @@ import java.util.*
 
 @ReactModule(name = PosPrinterModule.NAME)
 class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
-    
+    private var printerService: Any? = null
+
     companion object {
         const val NAME = "PosPrinter"
         private const val TAG = "PosPrinterModule"
@@ -34,10 +34,15 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
             "BOLD_OFF" to byteArrayOf(0x1B, 0x45, 0x00),
             "UNDERLINE_ON" to byteArrayOf(0x1B, 0x2D, 0x01),
             "UNDERLINE_OFF" to byteArrayOf(0x1B, 0x2D, 0x00),
-            "SIZE_NORMAL" to byteArrayOf(0x1D, 0x21, 0x00),
-            "SIZE_LARGE" to byteArrayOf(0x1D, 0x21, 0x11),
             "CASH_DRAWER" to byteArrayOf(0x1B, 0x70, 0x00, 0x19, 0xFA.toByte())
         )
+
+        private var lastFontSizeMethod: String = "unknown"
+    
+        fun getLastFontSizeMethod(): String = lastFontSizeMethod
+        fun setLastFontSizeMethod(method: String) {
+            lastFontSizeMethod = method
+        }
         
         object Events {
             const val DEVICE_CONNECTED = "DEVICE_CONNECTED"
@@ -63,17 +68,12 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
     
     @Volatile
     private var isConnected = false
-    
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    
-    override fun getName(): String {
-        return NAME
-    }
-    
+    override fun getName(): String = NAME
     override fun onCatalystInstanceDestroy() {
         super.onCatalystInstanceDestroy()
-        disconnectPrinter(null)
         scope.cancel()
+        disconnectPrinter(null)
     }
     
     @ReactMethod
@@ -106,10 +106,11 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
             val deviceList = Arguments.createArray()
             
             for (device in pairedDevices) {
-                val deviceInfo = Arguments.createMap()
-                deviceInfo.putString("name", device.name ?: "Unknown")
-                deviceInfo.putString("address", device.address)
-                deviceInfo.putString("type", "bluetooth")
+                val deviceInfo = Arguments.createMap().apply {
+                    putString("name", device.name ?: "Unknown")
+                    putString("address", device.address)
+                    putString("type", "bluetooth")
+                }
                 deviceList.pushMap(deviceInfo)
             }
             
@@ -156,14 +157,78 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
         
         executeWithConnection(promise) { stream ->
             try {
-                options?.let { applyTextFormatting(it, stream) }
-                stream.write(text.toByteArray(Charsets.UTF_8))
-                stream.write("\n".toByteArray())
+                var usedBitmapRendering = false
+                
+                options?.let { 
+                    val formattingResult = applyTextFormatting(it, stream)
+                    
+                    val needsBitmapForAlignment = options.hasKey("align") && options.getString("align") != "LEFT"
+                    val needsBitmapForFont = options.hasKey("fontType") && options.getString("fontType") != "A"
+                    val needsBitmapForStyling = (options.hasKey("bold") && options.getBoolean("bold")) ||
+                                              (options.hasKey("italic") && options.getBoolean("italic")) ||
+                                              (options.hasKey("underline") && options.getBoolean("underline"))
+                    
+                    if (formattingResult.shouldUseBitmapRendering || needsBitmapForAlignment || needsBitmapForFont || needsBitmapForStyling) {
+                        val textToBitmapHandler = TextToBitmapHandler(reactApplicationContext)
+                        
+                        val align = if (options.hasKey("align")) {
+                            options.getString("align")?.lowercase() ?: "left"
+                        } else "left"
+                        
+                        val fontFamily = if (options.hasKey("fontType")) {
+                            when (options.getString("fontType")?.uppercase()) {
+                                "A" -> "monospace"
+                                "B" -> "sans-serif" 
+                                "C" -> "serif"
+                                else -> "monospace"
+                            }
+                        } else "monospace"
+                        
+                        val isBold = if (options.hasKey("bold")) options.getBoolean("bold") else false
+                        val isItalic = if (options.hasKey("italic")) options.getBoolean("italic") else false
+                        val isUnderline = if (options.hasKey("underline")) options.getBoolean("underline") else false
+                        val isStrikethrough = if (options.hasKey("strikethrough")) options.getBoolean("strikethrough") else false
+                        val doubleWidth = if (options.hasKey("doubleWidth")) options.getBoolean("doubleWidth") else false
+                        val doubleHeight = if (options.hasKey("doubleHeight")) options.getBoolean("doubleHeight") else false
+                        
+                        val style = TextToBitmapHandler.TextStyle(
+                            isBold = isBold,
+                            isItalic = isItalic,
+                            isUnderline = isUnderline,
+                            isStrikethrough = isStrikethrough,
+                            fontFamily = fontFamily,
+                            align = align,
+                            doubleWidth = doubleWidth,
+                            doubleHeight = doubleHeight
+                        )
+                        
+                        val fontSize = formattingResult.fontSizePt?.toFloat() ?: 12.0f
+                        
+                        usedBitmapRendering = textToBitmapHandler.printTextAsBitmap(
+                            text, 
+                            fontSize, 
+                            stream, 
+                            formattingResult.letterSpacing,
+                            style = style
+                        )
+                    }
+                }
+                
+                if (!usedBitmapRendering) {
+                    stream.write(text.toByteArray(Charsets.UTF_8))
+                    stream.write("\n\n".toByteArray())
+                }
+                
                 stream.flush()
             } catch (e: Exception) {
                 throw IOException("Failed to write text: ${e.message}", e)
             }
         }
+    }
+    
+    private fun applyTextFormatting(options: ReadableMap, stream: OutputStream): TextFormattingHandler.FormattingResult {
+        val formattingHandler = TextFormattingHandler(printerService, reactApplicationContext)
+        return formattingHandler.applyFormatting(options, stream)
     }
     
     @ReactMethod
@@ -174,6 +239,7 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                 val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
                 val rasterData = convertBitmapToRaster(bitmap)
                 stream.write(rasterData)
+                stream.write("\n\n".toByteArray())
             } catch (e: Exception) {
                 throw IOException("Failed to process image: ${e.message}")
             }
@@ -183,10 +249,9 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
     @ReactMethod
     fun printBarcode(data: String, type: String, options: ReadableMap?, promise: Promise) {
         executeWithConnection(promise) { stream ->
-            // Basic barcode implementation
             stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
             stream.write(data.toByteArray())
-            stream.write("\n".toByteArray())
+            stream.write("\n\n".toByteArray())
         }
     }
     
@@ -195,7 +260,7 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
         executeWithConnection(promise) { stream ->
             stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
             stream.write(data.toByteArray())
-            stream.write("\n".toByteArray())
+            stream.write("\n\n".toByteArray())
         }
     }
     
@@ -226,10 +291,50 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
     
     @ReactMethod
     fun getStatus(promise: Promise) {
-        val status = Arguments.createMap()
-        status.putBoolean("connected", isConnected)
-        status.putString("platform", "android")
+        val status = Arguments.createMap().apply {
+            putBoolean("connected", isConnected)
+            putString("platform", "android")
+        }
         promise.resolve(status)
+    }
+
+    @ReactMethod
+    fun enterPrinterBuffer(clear: Boolean, promise: Promise) {
+        try {
+            printerService?.let { service ->
+                val method = service.javaClass.getMethod("enterPrinterBuffer", Boolean::class.java)
+                method.invoke(service, clear)
+                promise.resolve(true)
+            } ?: promise.reject("NO_SERVICE", "Printer service not available")
+        } catch (e: Exception) {
+            promise.reject("BUFFER_ERROR", "enterPrinterBuffer failed: ${e.message}")
+        }
+    }
+    
+    @ReactMethod
+    fun exitPrinterBuffer(commit: Boolean, promise: Promise) {
+        try {
+            printerService?.let { service ->
+                val method = service.javaClass.getMethod("exitPrinterBuffer", Boolean::class.java)
+                method.invoke(service, commit)
+                promise.resolve(true)
+            } ?: promise.reject("NO_SERVICE", "Printer service not available")
+        } catch (e: Exception) {
+            promise.reject("BUFFER_ERROR", "exitPrinterBuffer failed: ${e.message}")
+        }
+    }
+    
+    @ReactMethod
+    fun commitPrinterBuffer(promise: Promise) {
+        try {
+            printerService?.let { service ->
+                val method = service.javaClass.getMethod("commitPrinterBuffer")
+                method.invoke(service)
+                promise.resolve(true)
+            } ?: promise.reject("NO_SERVICE", "Printer service not available")
+        } catch (e: Exception) {
+            promise.reject("BUFFER_ERROR", "commitPrinterBuffer failed: ${e.message}")
+        }
     }
     
     private fun connectBluetoothPrinter(address: String, promise: Promise) {
@@ -271,102 +376,11 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                 return
             }
             
-            // Check if socket is still connected
-            if (bluetoothSocket?.isConnected != true) {
-                isConnected = false
-                outputStream = null
-                sendEvent(Events.DEVICE_CONNECTION_LOST, Arguments.createMap())
-                promise.reject(Errors.CONNECTION_FAILED, "Connection lost")
-                return
-            }
-            
             action(outputStream!!)
-            promise.resolve(true)
+            promise.resolve(null)
         } catch (e: IOException) {
-            Log.e(TAG, "IO Error during print operation", e)
-            // Handle connection lost
-            isConnected = false
-            outputStream = null
-            sendEvent(Events.DEVICE_CONNECTION_LOST, Arguments.createMap())
-            promise.reject(Errors.CONNECTION_FAILED, "Connection lost: ${e.message}", e)
-        } catch (e: Exception) {
             Log.e(TAG, "Print operation failed", e)
             promise.reject(Errors.CONNECTION_FAILED, "Print failed: ${e.message}", e)
-        }
-    }
-    
-    private fun applyTextFormatting(options: ReadableMap, stream: OutputStream) {
-        if (options.hasKey("align")) {
-            when (options.getString("align")?.uppercase()) {
-                "LEFT" -> stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
-                "CENTER" -> stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
-                "RIGHT" -> stream.write(ESC_COMMANDS["ALIGN_RIGHT"]!!)
-            }
-        }
-        
-        if (options.hasKey("bold") && options.getBoolean("bold")) {
-            stream.write(ESC_COMMANDS["BOLD_ON"]!!)
-        }
-        
-        if (options.hasKey("underline") && options.getBoolean("underline")) {
-            stream.write(ESC_COMMANDS["UNDERLINE_ON"]!!)
-        }
-        
-        if (options.hasKey("size")) {
-            val sizeValue = when (options.getType("size")) {
-                ReadableType.Number -> {
-                    val pixelSize = options.getInt("size")
-                    FontSizeConstants.getPixelBasedSize(pixelSize)
-                }
-                ReadableType.String -> {
-                    when (options.getString("size")?.uppercase()) {
-                        "TINY" -> FontSizeConstants.getPixelBasedSize(8)
-                        "SMALL" -> FontSizeConstants.getPixelBasedSize(10)
-                        "NORMAL" -> FontSizeConstants.getPixelBasedSize(12)
-                        "MEDIUM" -> FontSizeConstants.getPixelBasedSize(16)
-                        "LARGE" -> FontSizeConstants.getPixelBasedSize(24)
-                        "XLARGE" -> FontSizeConstants.getPixelBasedSize(36)
-                        "XXLARGE" -> FontSizeConstants.getPixelBasedSize(48)
-                        else -> 0x00
-                    }
-                }
-                else -> 0x00
-            }
-            stream.write(byteArrayOf(0x1D, 0x21, sizeValue.toByte()))
-        }
-        
-        if (options.hasKey("fontType")) {
-            when (options.getString("fontType")?.uppercase()) {
-                "A" -> stream.write(byteArrayOf(0x1B, 0x4D, 0x00))
-                "B" -> stream.write(byteArrayOf(0x1B, 0x4D, 0x01))
-                "C" -> stream.write(byteArrayOf(0x1B, 0x4D, 0x02))
-            }
-        }
-        
-        if (options.hasKey("italic") && options.getBoolean("italic")) {
-            stream.write(byteArrayOf(0x1B, 0x34, 0x01))
-        }
-        
-        if (options.hasKey("strikethrough") && options.getBoolean("strikethrough")) {
-            stream.write(byteArrayOf(0x1B, 0x2D, 0x02))
-        }
-        
-        if (options.hasKey("doubleStrike") && options.getBoolean("doubleStrike")) {
-            stream.write(byteArrayOf(0x1B, 0x47, 0x01))
-        }
-        
-        if (options.hasKey("invert") && options.getBoolean("invert")) {
-            stream.write(byteArrayOf(0x1D, 0x42, 0x01))
-        }
-        
-        if (options.hasKey("rotate")) {
-            val rotation = options.getInt("rotate")
-            when (rotation) {
-                90 -> stream.write(byteArrayOf(0x1B, 0x56, 0x01))
-                180 -> stream.write(byteArrayOf(0x1B, 0x7B, 0x01))
-                270 -> stream.write(byteArrayOf(0x1B, 0x56, 0x01, 0x1B, 0x7B, 0x01))
-                else -> stream.write(byteArrayOf(0x1B, 0x56, 0x00))
-            }
         }
     }
     
