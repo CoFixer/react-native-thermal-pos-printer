@@ -5,12 +5,19 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothSocket
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.graphics.Rect
 import android.util.Base64
 import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlinx.coroutines.*
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.util.*
@@ -158,22 +165,20 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
         executeWithConnection(promise) { stream ->
             try {
                 var usedBitmapRendering = false
-                
                 options?.let { 
                     val formattingResult = applyTextFormatting(it, stream)
                     
-                    val needsBitmapForAlignment = options.hasKey("align") && options.getString("align") != "LEFT"
+                    val alignValue = options.getString("align")?.lowercase() ?: "left"
+                    
                     val needsBitmapForFont = options.hasKey("fontType") && options.getString("fontType") != "A"
                     val needsBitmapForStyling = (options.hasKey("bold") && options.getBoolean("bold")) ||
                                               (options.hasKey("italic") && options.getBoolean("italic")) ||
                                               (options.hasKey("underline") && options.getBoolean("underline"))
+                    val needsBitmapForSize = options.hasKey("size") && (options.getInt("size") > 0)
+                    val needsBitmapForAlignment = alignValue != "left"
                     
-                    if (formattingResult.shouldUseBitmapRendering || needsBitmapForAlignment || needsBitmapForFont || needsBitmapForStyling) {
+                    if (formattingResult.shouldUseBitmapRendering || needsBitmapForFont || needsBitmapForStyling || needsBitmapForSize || needsBitmapForAlignment) {
                         val textToBitmapHandler = TextToBitmapHandler(reactApplicationContext)
-                        
-                        val align = if (options.hasKey("align")) {
-                            options.getString("align")?.lowercase() ?: "left"
-                        } else "left"
                         
                         val fontFamily = if (options.hasKey("fontType")) {
                             when (options.getString("fontType")?.uppercase()) {
@@ -197,7 +202,7 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                             isUnderline = isUnderline,
                             isStrikethrough = isStrikethrough,
                             fontFamily = fontFamily,
-                            align = align,
+                            align = alignValue,
                             doubleWidth = doubleWidth,
                             doubleHeight = doubleHeight
                         )
@@ -211,12 +216,15 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                             formattingResult.letterSpacing,
                             style = style
                         )
+                    } else {
+                        stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
                     }
+                } ?: run {
+                    stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
                 }
                 
                 if (!usedBitmapRendering) {
                     stream.write(text.toByteArray(Charsets.UTF_8))
-                    stream.write("\n\n".toByteArray())
                 }
                 
                 stream.flush()
@@ -230,37 +238,196 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
         val formattingHandler = TextFormattingHandler(printerService, reactApplicationContext)
         return formattingHandler.applyFormatting(options, stream)
     }
-    
+
     @ReactMethod
     fun printImage(base64Image: String, options: ReadableMap?, promise: Promise) {
         executeWithConnection(promise) { stream ->
             try {
+                val align = options?.getString("align") ?: "LEFT"
+                when (align.uppercase()) {
+                    "CENTER" -> stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
+                    "RIGHT" -> stream.write(ESC_COMMANDS["ALIGN_RIGHT"]!!)
+                    else -> stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+                }
+
                 val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
-                val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                val rasterData = convertBitmapToRaster(bitmap)
-                stream.write(rasterData)
-                stream.write("\n\n".toByteArray())
+                val factoryOptions = BitmapFactory.Options().apply { inSampleSize = 2 }
+                var originalBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, factoryOptions)
+                originalBitmap = convertToWhiteBackground(originalBitmap)
+
+                val maxWidth = 384
+                val chunkHeight = 8
+                val widthAligned = (maxWidth / 8) * 8
+                val aspectRatio = originalBitmap.height.toFloat() / originalBitmap.width
+                val scaledHeight = (widthAligned * aspectRatio).toInt()
+                val paddedHeight = ((scaledHeight + chunkHeight - 1) / chunkHeight) * chunkHeight
+
+                val finalBitmap = Bitmap.createBitmap(widthAligned, paddedHeight, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(finalBitmap)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                canvas.drawColor(Color.WHITE)
+                canvas.drawBitmap(originalBitmap, Rect(0, 0, originalBitmap.width, originalBitmap.height), Rect(0, 0, widthAligned, scaledHeight), paint)
+
+                val rasterBytes = convertBitmapToRasterChunks(finalBitmap, chunkHeight)
+                for (chunk in rasterBytes) {
+                    stream.write(chunk)
+                    Thread.sleep(50)
+                }
+
+                stream.write(byteArrayOf(0x0A, 0x0A))
+                stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+
             } catch (e: Exception) {
-                throw IOException("Failed to process image: ${e.message}")
+                throw IOException("Failed to print image: ${e.message}")
             }
         }
     }
-    
+
+    private fun convertToWhiteBackground(bitmap: Bitmap): Bitmap {
+        val result = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        canvas.drawColor(Color.WHITE)
+        val paint = Paint().apply {
+            colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        }
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+        return result
+    }
+
+    private fun convertBitmapToRasterChunks(bitmap: Bitmap, chunkHeight: Int): List<ByteArray> {
+        val width = bitmap.width
+        val height = bitmap.height
+        val widthBytes = width / 8
+        val chunks = mutableListOf<ByteArray>()
+        var y = 0
+
+        while (y < height) {
+            val blockHeight = minOf(chunkHeight, height - y)
+            val baos = ByteArrayOutputStream()
+
+            baos.write(byteArrayOf(0x1D, 0x76, 0x30, 0x00))
+            baos.write(widthBytes and 0xFF)
+            baos.write((widthBytes shr 8) and 0xFF)
+            baos.write(blockHeight and 0xFF)
+            baos.write((blockHeight shr 8) and 0xFF)
+
+            for (row in 0 until blockHeight) {
+                for (byteX in 0 until widthBytes) {
+                    var byte = 0
+                    for (bit in 0 until 8) {
+                        val x = byteX * 8 + bit
+                        val pixel = bitmap.getPixel(x, y + row)
+                        val r = (pixel shr 16) and 0xFF
+                        val g = (pixel shr 8) and 0xFF
+                        val b = pixel and 0xFF
+                        val luminance = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+                        if (luminance < 127) byte = byte or (1 shl (7 - bit))
+                    }
+                    baos.write(byte)
+                }
+            }
+
+            chunks.add(baos.toByteArray())
+            y += blockHeight
+        }
+
+        return chunks
+    }
+
     @ReactMethod
     fun printBarcode(data: String, type: String, options: ReadableMap?, promise: Promise) {
         executeWithConnection(promise) { stream ->
-            stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
-            stream.write(data.toByteArray())
-            stream.write("\n\n".toByteArray())
+            try {
+                val align = options?.getString("align") ?: "CENTER"
+                val height = options?.getInt("height") ?: 60
+                val width = options?.getInt("width") ?: 2
+                val textPosition = options?.getString("textPosition") ?: "BELOW"
+                
+                when (align.uppercase()) {
+                    "LEFT" -> stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+                    "CENTER" -> stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
+                    "RIGHT" -> stream.write(ESC_COMMANDS["ALIGN_RIGHT"]!!)
+                }
+                
+                val barcodeType = when (type.uppercase()) {
+                    "UPC_A" -> 0
+                    "UPC_E" -> 1
+                    "EAN13" -> 2
+                    "EAN8" -> 3
+                    "CODE39" -> 4
+                    "ITF" -> 5
+                    "CODABAR" -> 6
+                    "CODE93" -> 7
+                    "CODE128" -> 8
+                    else -> 8
+                }
+                
+                stream.write(byteArrayOf(0x1D, 0x68, height.toByte()))
+                stream.write(byteArrayOf(0x1D, 0x77, width.toByte()))
+                
+                val hriPosition = when (textPosition.uppercase()) {
+                    "NONE" -> 0
+                    "ABOVE" -> 1
+                    "BELOW" -> 2
+                    "BOTH" -> 3
+                    else -> 2
+                }
+                stream.write(byteArrayOf(0x1D, 0x48, hriPosition.toByte()))
+                
+                stream.write(byteArrayOf(0x1D, 0x6B, barcodeType.toByte()))
+                stream.write(data.toByteArray())
+                stream.write(byteArrayOf(0x00))
+                
+                stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+            } catch (e: Exception) {
+                throw IOException("Failed to print barcode: ${e.message}", e)
+            }
         }
     }
     
     @ReactMethod
     fun printQRCode(data: String, options: ReadableMap?, promise: Promise) {
         executeWithConnection(promise) { stream ->
-            stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
-            stream.write(data.toByteArray())
-            stream.write("\n\n".toByteArray())
+            try {
+                val align = options?.getString("align") ?: "CENTER"
+                val size = options?.getInt("size") ?: 5
+                val errorLevel = options?.getString("errorLevel") ?: "M"
+                
+                when (align.uppercase()) {
+                    "LEFT" -> stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+                    "CENTER" -> stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
+                    "RIGHT" -> stream.write(ESC_COMMANDS["ALIGN_RIGHT"]!!)
+                }
+                
+                stream.write(byteArrayOf(0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00))
+                stream.write(byteArrayOf(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, size.toByte()))
+                
+                val errorLevelByte = when (errorLevel.uppercase()) {
+                    "L" -> 0x30.toByte()
+                    "M" -> 0x31.toByte()
+                    "Q" -> 0x32.toByte()
+                    "H" -> 0x33.toByte()
+                    else -> 0x31.toByte()
+                }
+                stream.write(byteArrayOf(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, errorLevelByte))
+                
+                val dataBytes = data.toByteArray(Charsets.UTF_8)
+                val dataLength = dataBytes.size + 3
+                val pL = (dataLength and 0xFF).toByte()
+                val pH = ((dataLength shr 8) and 0xFF).toByte()
+                
+                stream.write(byteArrayOf(0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30))
+                stream.write(dataBytes)
+                
+                stream.write(byteArrayOf(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30))
+                
+                stream.flush()
+                Thread.sleep(100)
+                
+                stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+            } catch (e: Exception) {
+                throw IOException("Failed to print QR code: ${e.message}", e)
+            }
         }
     }
     
@@ -336,6 +503,14 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
             promise.reject("BUFFER_ERROR", "commitPrinterBuffer failed: ${e.message}")
         }
     }
+
+    @ReactMethod
+    fun resetPrinter(promise: Promise) {
+        executeWithConnection(promise) { stream ->
+            stream.write(ESC_COMMANDS["INIT"]!!)
+            stream.flush()
+        }
+    }
     
     private fun connectBluetoothPrinter(address: String, promise: Promise) {
         connectionJob = scope.launch {
@@ -355,6 +530,10 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                 withContext(Dispatchers.Main) {
                     if (bluetoothSocket?.isConnected == true) {
                         isConnected = true
+
+                        outputStream?.write(ESC_COMMANDS["INIT"]!!)
+                        outputStream?.flush()
+
                         sendEvent(Events.DEVICE_CONNECTED, Arguments.createMap())
                         promise.resolve(true)
                     } else {
@@ -370,12 +549,12 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
     }
     
     private inline fun executeWithConnection(promise: Promise, action: (OutputStream) -> Unit) {
+        if (!isConnected || outputStream == null) {
+            promise.reject(Errors.NOT_CONNECTED, "Printer not connected")
+            return
+        }
+        
         try {
-            if (!isConnected || outputStream == null) {
-                promise.reject(Errors.NOT_CONNECTED, "Printer not connected")
-                return
-            }
-            
             action(outputStream!!)
             promise.resolve(null)
         } catch (e: IOException) {
@@ -384,42 +563,31 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
         }
     }
     
-    private fun convertBitmapToRaster(bitmap: Bitmap): ByteArray {
-        val width = bitmap.width
-        val height = bitmap.height
-        val rasterData = mutableListOf<Byte>()
-        
-        rasterData.addAll(listOf(0x1D, 0x76, 0x30, 0x00).map { it.toByte() })
-        
-        val widthBytes = (width + 7) / 8
-        rasterData.addAll(listOf(widthBytes and 0xFF, (widthBytes shr 8) and 0xFF).map { it.toByte() })
-        rasterData.addAll(listOf(height and 0xFF, (height shr 8) and 0xFF).map { it.toByte() })
-        
-        for (y in 0 until height) {
-            for (x in 0 until widthBytes) {
-                var byte = 0
-                for (bit in 0 until 8) {
-                    val pixelX = x * 8 + bit
-                    if (pixelX < width) {
-                        val pixel = bitmap.getPixel(pixelX, y)
-                        val gray = (0.299 * ((pixel shr 16) and 0xFF) + 
-                                   0.587 * ((pixel shr 8) and 0xFF) + 
-                                   0.114 * (pixel and 0xFF)).toInt()
-                        if (gray < 128) {
-                            byte = byte or (1 shl (7 - bit))
-                        }
-                    }
-                }
-                rasterData.add(byte.toByte())
-            }
-        }
-        
-        return rasterData.toByteArray()
-    }
-    
     private fun sendEvent(eventName: String, params: WritableMap) {
         reactApplicationContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit(eventName, params)
+    }
+
+    private fun convertToMonochrome(bitmap: Bitmap): Bitmap {
+        val monoBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(monoBitmap)
+
+        val paint = Paint().apply {
+            colorFilter = ColorMatrixColorFilter(ColorMatrix().apply { setSaturation(0f) })
+        }
+
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        monoBitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+
+        for (i in pixels.indices) {
+            val gray = Color.red(pixels[i])
+            pixels[i] = if (gray < 128) Color.BLACK else Color.WHITE
+        }
+
+        monoBitmap.setPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return monoBitmap
     }
 }

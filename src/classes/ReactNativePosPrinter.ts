@@ -225,7 +225,11 @@ export class ReactNativePosPrinter {
     }
 
     try {
-      await PosPrinter.printImage(imageUri, options);
+      const imageData = imageUri.startsWith('data:image') 
+        ? imageUri.split(',')[1] 
+        : imageUri;
+
+      await PosPrinter.printImage(imageData, options);
     } catch (error) {
       throw new PrinterError(
         PrinterErrorCode.PRINT_FAILED,

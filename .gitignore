@@ -309,3 +309,6 @@ Desktop.ini
 *.njsproj
 *.sln
 *.sw?
+
+# Test Printer Project
+printer/

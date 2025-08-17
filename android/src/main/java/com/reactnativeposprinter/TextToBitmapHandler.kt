@@ -43,7 +43,6 @@ class TextToBitmapHandler(private val context: Context) {
             val monoBitmap = convertToMonochrome(bitmap)
             val escPosData = convertBitmapToEscPos(monoBitmap)
             outputStream.write(escPosData)
-            outputStream.write("\n\n".toByteArray())
             outputStream.flush()
             true
         } catch (e: Exception) {
@@ -78,14 +77,10 @@ class TextToBitmapHandler(private val context: Context) {
     ): Bitmap {
         val fontSizePx = convertPtToPx(fontSizePt)
         val paint = createPaint(fontSizePx, letterSpacing, style)
-        val textBounds = Rect()
-        paint.getTextBounds(text, 0, text.length, textBounds)
-        
-        var textWidth = textBounds.width()
+        val actualTextWidth = paint.measureText(text)
         var textHeight = (paint.textSize * lineSpacing).toInt()
         
         if (style.doubleWidth) {
-            textWidth *= 2
             paint.textScaleX = 2.0f
         }
         if (style.doubleHeight) {
@@ -93,20 +88,31 @@ class TextToBitmapHandler(private val context: Context) {
             paint.textSize = fontSizePx * 2
         }
         
-        val bitmapWidth = minOf(textWidth + DEFAULT_PADDING * 2, PRINTER_WIDTH_DOTS)
+        val bitmapWidth = PRINTER_WIDTH_DOTS
         val bitmapHeight = textHeight + DEFAULT_PADDING * 2
         val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         
         canvas.drawColor(Color.WHITE)
+        val availableWidth = bitmapWidth - (DEFAULT_PADDING * 2)
+        val finalTextWidth = if (style.doubleWidth) actualTextWidth * 2 else actualTextWidth
         
         val x = when (style.align.lowercase()) {
-            "center" -> (bitmapWidth - textWidth) / 2f
-            "right" -> bitmapWidth - textWidth - DEFAULT_PADDING.toFloat()
-            else -> DEFAULT_PADDING.toFloat()
+            "center" -> {
+                val centerX = DEFAULT_PADDING + (availableWidth - finalTextWidth) / 2f
+                centerX
+            }
+            "right" -> {
+                val rightX = DEFAULT_PADDING + availableWidth - finalTextWidth
+                rightX
+            }
+            else -> {
+                DEFAULT_PADDING.toFloat()
+            }
         }
         
-        val y = (bitmapHeight - textBounds.bottom - DEFAULT_PADDING).toFloat()
+        val fontMetrics = paint.fontMetrics
+        val y = DEFAULT_PADDING - fontMetrics.top
         canvas.drawText(text, x, y, paint)
         
         return bitmap
@@ -164,7 +170,7 @@ class TextToBitmapHandler(private val context: Context) {
         val outputStream = ByteArrayOutputStream()
         val width = bitmap.width.coerceAtMost(384)
         val height = bitmap.height
-        val CHUNK_HEIGHT = 8 
+        val CHUNK_HEIGHT = 24 
         
         for (startY in 0 until height step CHUNK_HEIGHT) {
             val endY = minOf(startY + CHUNK_HEIGHT, height)
@@ -198,7 +204,7 @@ class TextToBitmapHandler(private val context: Context) {
                 }
             }
 
-            Thread.sleep(50)
+            Thread.sleep(20)
         }
         
         return outputStream.toByteArray()
@@ -240,6 +246,7 @@ class TextToBitmapHandler(private val context: Context) {
         
         val lines = text.split("\n")
         val lineHeight = (paint.textSize * lineSpacing).toInt()
+        val fontMetrics = paint.fontMetrics
         
         var maxWidth = 0
         val lineWidths = mutableListOf<Int>()
@@ -252,7 +259,7 @@ class TextToBitmapHandler(private val context: Context) {
             maxWidth = maxOf(maxWidth, width)
         }
         
-        val bitmapWidth = minOf(maxWidth + DEFAULT_PADDING * 2, PRINTER_WIDTH_DOTS)
+        val bitmapWidth = minOf((maxWidth + DEFAULT_PADDING * 2), PRINTER_WIDTH_DOTS)
         val bitmapHeight = (lines.size * lineHeight) + DEFAULT_PADDING * 2
         
         val bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888)
@@ -267,7 +274,7 @@ class TextToBitmapHandler(private val context: Context) {
                 else -> DEFAULT_PADDING.toFloat()
             }
             
-            val y = DEFAULT_PADDING + (index + 1) * lineHeight - paint.descent()
+            val y = DEFAULT_PADDING.toFloat() + (index + 1) * lineHeight - fontMetrics.descent
             canvas.drawText(line, x, y, paint)
         }
         
