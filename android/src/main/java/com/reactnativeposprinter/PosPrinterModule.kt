@@ -274,6 +274,7 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                     Thread.sleep(50)
                 }
 
+                stream.write(byteArrayOf(0x1B, 0x33, 0x00))
                 stream.write(byteArrayOf(0x0A, 0x0A))
                 stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
 

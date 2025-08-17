@@ -513,7 +513,8 @@ Below is a sample print image used in the example app:
 ```typescript
 // Old way
 const devices = await ReactNativePosPrinter.getDeviceList();
-await ReactNativePosPrinter.connectPrinter(devices[0].address, 'BLUETOOTH');
+await ReactNativePosPrinter.connectPrinter(devices[0].address, { type: 'BLUETOOTH' });
+
 await ReactNativePosPrinter.printText('Hello World!');
 await ReactNativePosPrinter.disconnectPrinter();
 ```
