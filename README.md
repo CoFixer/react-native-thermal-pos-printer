@@ -130,7 +130,8 @@ await ReactNativePosPrinter.init();
 const devices = await ReactNativePosPrinter.getDeviceList();
 
 // Connect to a printer (legacy method)
-await ReactNativePosPrinter.connectPrinter(device.address, 'BLUETOOTH');
+await ReactNativePosPrinter.connectPrinter(device.address, { type: 'BLUETOOTH' });
+
 
 // Print text with numeric font size
 await ReactNativePosPrinter.printText('Hello World!', {
@@ -497,6 +498,12 @@ await printer.printText('Max text', { size: 48 });
 - Citizen
 - Bixolon
 - Any ESC/POS compatible thermal printer
+
+# Demo Print Image
+
+Below is a sample print image used in the example app:
+
+![Demo Print](example/assets/demo_print.png)
 
 ## Migration Guide
 
