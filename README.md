@@ -499,7 +499,7 @@ await printer.printText('Max text', { size: 48 });
 - Bixolon
 - Any ESC/POS compatible thermal printer
 
-# Demo Print Image
+## Demo Print Image
 
 Below is a sample print image used in the example app:
 
