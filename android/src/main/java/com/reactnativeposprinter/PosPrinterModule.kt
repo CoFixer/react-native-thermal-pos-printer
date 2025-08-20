@@ -24,6 +24,12 @@ import java.util.*
 
 @ReactModule(name = PosPrinterModule.NAME)
 class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+    data class FormattingResult(
+        val shouldUseBitmapRendering: Boolean,
+        val fontSizePt: Int?,
+        val letterSpacing: Float?
+    )
+
     private var printerService: Any? = null
 
     companion object {
@@ -155,48 +161,133 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
         promise.resolve(isConnected)
     }
     
+    // @ReactMethod
+    // fun printText(text: String, options: ReadableMap?, promise: Promise) {
+    //     if (text.isEmpty()) {
+    //         promise.reject(Errors.UNSUPPORTED_TYPE, "Text cannot be empty")
+    //         return
+    //     }
+        
+    //     executeWithConnection(promise) { stream ->
+    //         try {
+    //             var usedBitmapRendering = false
+    //             options?.let { 
+    //                 val formattingResult = applyTextFormatting(it, stream)
+                    
+    //                 val alignValue = options.getString("align")?.lowercase() ?: "left"
+                    
+    //                 val needsBitmapForFont = options.hasKey("fontType") && options.getString("fontType") != "A"
+    //                 val needsBitmapForStyling = (options.hasKey("bold") && options.getBoolean("bold")) ||
+    //                                           (options.hasKey("italic") && options.getBoolean("italic")) ||
+    //                                           (options.hasKey("underline") && options.getBoolean("underline"))
+    //                 val needsBitmapForSize = options.hasKey("size") && (options.getInt("size") > 0)
+    //                 val needsBitmapForAlignment = alignValue != "left"
+                    
+    //                 if (formattingResult.shouldUseBitmapRendering || needsBitmapForFont || needsBitmapForStyling || needsBitmapForSize || needsBitmapForAlignment) {
+    //                     val textToBitmapHandler = TextToBitmapHandler(reactApplicationContext)
+                        
+    //                     val fontFamily = if (options.hasKey("fontType")) {
+    //                         when (options.getString("fontType")?.uppercase()) {
+    //                             "A" -> "monospace"
+    //                             "B" -> "sans-serif" 
+    //                             "C" -> "serif"
+    //                             else -> "monospace"
+    //                         }
+    //                     } else "monospace"
+                        
+    //                     val isBold = if (options.hasKey("bold")) options.getBoolean("bold") else false
+    //                     val isItalic = if (options.hasKey("italic")) options.getBoolean("italic") else false
+    //                     val isUnderline = if (options.hasKey("underline")) options.getBoolean("underline") else false
+    //                     val isStrikethrough = if (options.hasKey("strikethrough")) options.getBoolean("strikethrough") else false
+    //                     val doubleWidth = if (options.hasKey("doubleWidth")) options.getBoolean("doubleWidth") else false
+    //                     val doubleHeight = if (options.hasKey("doubleHeight")) options.getBoolean("doubleHeight") else false
+                        
+    //                     val style = TextToBitmapHandler.TextStyle(
+    //                         isBold = isBold,
+    //                         isItalic = isItalic,
+    //                         isUnderline = isUnderline,
+    //                         isStrikethrough = isStrikethrough,
+    //                         fontFamily = fontFamily,
+    //                         align = alignValue,
+    //                         doubleWidth = doubleWidth,
+    //                         doubleHeight = doubleHeight
+    //                     )
+                        
+    //                     val fontSize = formattingResult.fontSizePt?.toFloat() ?: 12.0f
+                        
+    //                     usedBitmapRendering = textToBitmapHandler.printTextAsBitmap(
+    //                         text, 
+    //                         fontSize, 
+    //                         stream, 
+    //                         formattingResult.letterSpacing,
+    //                         style = style
+    //                     )
+    //                 } else {
+    //                     stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+    //                 }
+    //             } ?: run {
+    //                 stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+    //             }
+                
+    //             if (!usedBitmapRendering) {
+    //                 stream.write(text.toByteArray(Charsets.UTF_8))
+    //             }
+                
+    //             stream.flush()
+    //         } catch (e: Exception) {
+    //             throw IOException("Failed to write text: ${e.message}", e)
+    //         }
+    //     }
+    // }
+
+    // Add this class definition at the top of your file
     @ReactMethod
     fun printText(text: String, options: ReadableMap?, promise: Promise) {
         if (text.isEmpty()) {
             promise.reject(Errors.UNSUPPORTED_TYPE, "Text cannot be empty")
             return
         }
-        
+
         executeWithConnection(promise) { stream ->
             try {
                 var usedBitmapRendering = false
-                options?.let { 
-                    val formattingResult = applyTextFormatting(it, stream)
-                    
+                var formattingResult: TextFormattingHandler.FormattingResult? = null
+                var bitmapStyle: TextToBitmapHandler.TextStyle? = null
+                var bitmapFontSize: Float = 12.0f
+                var bitmapLetterSpacing: Float = 1.0f
+
+                options?.let {
+                    formattingResult = applyTextFormatting(it, stream)
+
                     val alignValue = options.getString("align")?.lowercase() ?: "left"
-                    
+
                     val needsBitmapForFont = options.hasKey("fontType") && options.getString("fontType") != "A"
                     val needsBitmapForStyling = (options.hasKey("bold") && options.getBoolean("bold")) ||
-                                              (options.hasKey("italic") && options.getBoolean("italic")) ||
-                                              (options.hasKey("underline") && options.getBoolean("underline"))
+                                                (options.hasKey("italic") && options.getBoolean("italic")) ||
+                                                (options.hasKey("underline") && options.getBoolean("underline"))
                     val needsBitmapForSize = options.hasKey("size") && (options.getInt("size") > 0)
                     val needsBitmapForAlignment = alignValue != "left"
-                    
-                    if (formattingResult.shouldUseBitmapRendering || needsBitmapForFont || needsBitmapForStyling || needsBitmapForSize || needsBitmapForAlignment) {
-                        val textToBitmapHandler = TextToBitmapHandler(reactApplicationContext)
-                        
+
+                    if (formattingResult?.shouldUseBitmapRendering == true || needsBitmapForFont || needsBitmapForStyling || needsBitmapForSize || needsBitmapForAlignment) {
+                        usedBitmapRendering = true
+
                         val fontFamily = if (options.hasKey("fontType")) {
                             when (options.getString("fontType")?.uppercase()) {
                                 "A" -> "monospace"
-                                "B" -> "sans-serif" 
+                                "B" -> "sans-serif"
                                 "C" -> "serif"
                                 else -> "monospace"
                             }
                         } else "monospace"
-                        
+
                         val isBold = if (options.hasKey("bold")) options.getBoolean("bold") else false
                         val isItalic = if (options.hasKey("italic")) options.getBoolean("italic") else false
                         val isUnderline = if (options.hasKey("underline")) options.getBoolean("underline") else false
                         val isStrikethrough = if (options.hasKey("strikethrough")) options.getBoolean("strikethrough") else false
                         val doubleWidth = if (options.hasKey("doubleWidth")) options.getBoolean("doubleWidth") else false
                         val doubleHeight = if (options.hasKey("doubleHeight")) options.getBoolean("doubleHeight") else false
-                        
-                        val style = TextToBitmapHandler.TextStyle(
+
+                        bitmapStyle = TextToBitmapHandler.TextStyle(
                             isBold = isBold,
                             isItalic = isItalic,
                             isUnderline = isUnderline,
@@ -206,34 +297,121 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                             doubleWidth = doubleWidth,
                             doubleHeight = doubleHeight
                         )
-                        
-                        val fontSize = formattingResult.fontSizePt?.toFloat() ?: 12.0f
-                        
-                        usedBitmapRendering = textToBitmapHandler.printTextAsBitmap(
-                            text, 
-                            fontSize, 
-                            stream, 
-                            formattingResult.letterSpacing,
-                            style = style
-                        )
+
+                        bitmapFontSize = formattingResult?.fontSizePt?.toFloat() ?: 12.0f
+                        bitmapLetterSpacing = formattingResult?.letterSpacing ?: 1.0f 
                     } else {
                         stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
                     }
                 } ?: run {
                     stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
                 }
-                
-                if (!usedBitmapRendering) {
-                    stream.write(text.toByteArray(Charsets.UTF_8))
+
+                if (usedBitmapRendering) {
+                    val maxLineWidth = 32 
+                    val textToBitmapHandler = TextToBitmapHandler(reactApplicationContext)
+                    val allLines = breakTextIntoLinesWithWordBreaking(text, maxLineWidth)
+
+                    for (line in allLines) {
+                        if (line.isNotEmpty()) {
+                            textToBitmapHandler.printTextAsBitmap(
+                                line,
+                                bitmapFontSize,
+                                stream,
+                                bitmapLetterSpacing,
+                                style = bitmapStyle!!
+                            )
+                        }
+                    }
+                } else {
+                    val maxLineWidth = 32
+                    val allLines = breakTextIntoLines(text, maxLineWidth)
+
+                    for (line in allLines) {
+                        stream.write("$line\n".toByteArray(Charsets.UTF_8))
+                    }
                 }
-                
+
                 stream.flush()
             } catch (e: Exception) {
                 throw IOException("Failed to write text: ${e.message}", e)
             }
         }
     }
-    
+
+    private fun breakTextIntoLinesWithWordBreaking(text: String, maxLineWidth: Int): List<String> {
+        val lines = mutableListOf<String>()
+        val originalLines = text.split("\n")
+
+        for (line in originalLines) {
+            if (line.isEmpty()) {
+                lines.add("")
+                continue
+            }
+
+            var remaining = line
+            while (remaining.length > maxLineWidth) {
+                val candidate = remaining.substring(0, maxLineWidth)
+                val lastSpaceIndex = candidate.indexOfLast { it.isWhitespace() }
+
+                if (lastSpaceIndex >= 0) {
+                    lines.add(remaining.substring(0, lastSpaceIndex))
+                    remaining = remaining.substring(lastSpaceIndex + 1)
+                } else {
+                    lines.add(candidate)
+                    remaining = remaining.substring(maxLineWidth)
+                }
+            }
+            if (remaining.isNotEmpty()) {
+                lines.add(remaining)
+            }
+        }
+
+        return lines
+    }
+
+    private fun breakTextIntoLines(text: String, maxLineWidth: Int): List<String> {
+        val lines = mutableListOf<String>()
+        val originalLines = text.split("\n")
+
+        for (line in originalLines) {
+            if (line.isEmpty()) {
+                lines.add("")
+                continue
+            }
+
+            if (line.length <= maxLineWidth) {
+                lines.add(line)
+            } else {
+                var currentLine = ""
+                val words = line.split("\\s+".toRegex())
+
+                for (word in words) {
+                    val trimmedWord = word.trim()
+                    if (trimmedWord.isEmpty()) continue
+
+                    if (currentLine.isEmpty()) {
+                        currentLine = trimmedWord
+                    } else {
+                        val newLine = "$currentLine $trimmedWord"
+                        if (newLine.length > maxLineWidth) {
+                            lines.add(currentLine)
+                            currentLine = trimmedWord
+                        } else {
+                            currentLine = newLine
+                        }
+                    }
+                }
+
+                if (currentLine.isNotEmpty()) {
+                    lines.add(currentLine)
+                }
+            }
+        }
+
+        return lines
+    }
+
     private fun applyTextFormatting(options: ReadableMap, stream: OutputStream): TextFormattingHandler.FormattingResult {
         val formattingHandler = TextFormattingHandler(printerService, reactApplicationContext)
         return formattingHandler.applyFormatting(options, stream)
