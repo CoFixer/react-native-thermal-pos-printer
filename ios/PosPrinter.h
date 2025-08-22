@@ -1,16 +1,17 @@
+#if __has_include(<React/RCTBridgeModule.h>)
 #import <React/RCTBridgeModule.h>
-
-@interface PosPrinter : NSObject <RCTBridgeModule>
-
-@end
-#ifdef RCT_NEW_ARCH_ENABLED
-#import "RNPosPrinterSpec.h"
-@interface PosPrinter : NSObject <NativePosPrinterSpec>
+#elif __has_include("RCTBridgeModule.h")
+#import "RCTBridgeModule.h"
+#elif __has_include("React/RCTBridgeModule.h")
+#import "React/RCTBridgeModule.h"
 #else
-#import <React/RCTBridgeModule.h>
+#import <Foundation/Foundation.h>
+@protocol RCTBridgeModule <NSObject>
+@end
+#endif
+
 #import <CoreBluetooth/CoreBluetooth.h>
 
 @interface PosPrinter : NSObject <RCTBridgeModule, CBCentralManagerDelegate, CBPeripheralDelegate>
 
 @end
-#endif
