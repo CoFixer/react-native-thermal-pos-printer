@@ -44,6 +44,11 @@ class TextToBitmapHandler(private val context: Context) {
             val escPosData = convertBitmapToEscPos(monoBitmap)
             outputStream.write(escPosData)
             outputStream.flush()
+            try {
+                Thread.sleep(30)
+            } catch (_: InterruptedException) {
+                // ignore
+            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error printing text as bitmap", e)
