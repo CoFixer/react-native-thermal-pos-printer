@@ -5,6 +5,7 @@
 #import <ExternalAccessory/ExternalAccessory.h>
 #import <CoreText/CoreText.h>
 #import <CoreGraphics/CoreGraphics.h>
+#include <unistd.h>
 
 @interface PosPrinter () <CBCentralManagerDelegate, CBPeripheralDelegate>
 @property (nonatomic, strong) CBCentralManager *centralManager;
@@ -131,10 +132,10 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
     
     NSMutableData *commandData = [[NSMutableData alloc] init];
     BOOL usedBitmapRendering = NO;
+    NSString *alignValue = options[@"align"] ? [options[@"align"] lowercaseString] : @"left";
     
     if (options) {
         NSDictionary *formattingResult = [self applyTextFormatting:options commandData:commandData];
-        NSString *alignValue = [options[@"align"] lowercaseString] ?: @"left";
         
         BOOL needsBitmapForFont = options[@"fontType"] && ![options[@"fontType"] isEqualToString:@"A"];
         BOOL needsBitmapForStyling = (options[@"bold"] && [options[@"bold"] boolValue]) ||
@@ -177,7 +178,10 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
                                                     doubleHeight:doubleHeight
                                                    letterSpacing:letterSpacing
                                                            align:alignValue];
-                    [commandData appendData:bitmapData];
+                    if (bitmapData) {
+                        // write each bitmap directly so peripheral can process in chunks
+                        [self writeDataToPrinter:bitmapData];
+                    }
                 }
             }
         } else {
@@ -185,6 +189,36 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
         }
     } else {
         [commandData appendBytes:"\x1B\x61\x00" length:3]; 
+    }
+
+    BOOL (^containsBangla)(NSString *) = ^BOOL(NSString *s) {
+        for (NSUInteger i = 0; i < s.length; i++) {
+            unichar ch = [s characterAtIndex:i];
+            if (ch >= 0x0980 && ch <= 0x09FF) return YES;
+        }
+        return NO;
+    };
+
+    if (!usedBitmapRendering && containsBangla(text)) {
+        usedBitmapRendering = YES;
+        NSArray *lines = [self breakTextIntoLinesWithWordBreaking:text maxLineWidth:32];
+        for (NSString *line in lines) {
+            if (line.length > 0) {
+                                NSData *bitmapData = [self printTextAsBitmap:line
+                                    fontSize:12.0
+                                    fontFamily:@"Bangla Sangam MN"
+                                    isBold:NO
+                                    isItalic:NO
+                                    isUnderline:NO
+                                    doubleWidth:NO
+                                    doubleHeight:NO
+                                    letterSpacing:1.0
+                                    align:alignValue];
+                                if (bitmapData) {
+                                        [self writeDataToPrinter:bitmapData];
+                                }
+            }
+        }
     }
     
     if (!usedBitmapRendering) {
@@ -373,26 +407,42 @@ RCT_EXPORT_METHOD(printImage:(NSString *)base64Image
         return;
     }
     
-    NSMutableData *commandData = [[NSMutableData alloc] init];
-    
+    NSMutableData *alignCmd = [[NSMutableData alloc] init];
+
     if (options[@"align"]) {
         NSString *align = [options[@"align"] lowercaseString];
         if ([align isEqualToString:@"center"]) {
-            [commandData appendBytes:"\x1B\x61\x01" length:3];
+            [alignCmd appendBytes:"\x1B\x61\x01" length:3];
         } else if ([align isEqualToString:@"right"]) {
-            [commandData appendBytes:"\x1B\x61\x02" length:3];
+            [alignCmd appendBytes:"\x1B\x61\x02" length:3];
         } else {
-            [commandData appendBytes:"\x1B\x61\x00" length:3];
+            [alignCmd appendBytes:"\x1B\x61\x00" length:3];
         }
     }
-    
+
+    // send alignment first
+    if (alignCmd.length > 0) {
+        [self writeDataToPrinter:alignCmd];
+    }
+
     UIImage *processedImage = [self convertToWhiteBackground:image];
     NSData *rasterData = [self convertImageToRaster:processedImage];
-    [commandData appendData:rasterData];
-    
-    [commandData appendBytes:"\x1B\x61\x00" length:3];
-    
-    [self writeDataToPrinter:commandData];
+
+    // stream raster data in chunks to avoid overflowing BLE buffers
+    NSUInteger total = rasterData.length;
+    NSUInteger offset = 0;
+    const NSUInteger CHUNK_SIZE = 1024;
+    while (offset < total) {
+        NSUInteger chunkLen = MIN(CHUNK_SIZE, total - offset);
+        NSData *chunk = [rasterData subdataWithRange:NSMakeRange(offset, chunkLen)];
+        [self writeDataToPrinter:chunk];
+        offset += chunkLen;
+    }
+
+    // reset alignment to left after image
+    uint8_t resetAlign[] = {0x1B, 0x61, 0x00};
+    NSData *reset = [NSData dataWithBytes:resetAlign length:3];
+    [self writeDataToPrinter:reset];
     resolve(@YES);
 }
 
@@ -614,7 +664,9 @@ RCT_EXPORT_METHOD(resetPrinter:(RCTPromiseResolveBlock)resolve
 
 - (void)writeDataToPrinter:(NSData *)data {
     if (self.writeCharacteristic && self.connectedPeripheral) {
-        [self.connectedPeripheral writeValue:data forCharacteristic:self.writeCharacteristic type:CBCharacteristicWriteWithoutResponse];
+    [self.connectedPeripheral writeValue:data forCharacteristic:self.writeCharacteristic type:CBCharacteristicWriteWithoutResponse];
+    // give peripheral a short time to process buffer to avoid trailing corruption
+    usleep(50000); // 50ms
     }
 }
 

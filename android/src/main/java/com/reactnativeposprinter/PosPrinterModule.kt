@@ -255,11 +255,11 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                 var bitmapStyle: TextToBitmapHandler.TextStyle? = null
                 var bitmapFontSize: Float = 12.0f
                 var bitmapLetterSpacing: Float = 1.0f
+                // determine alignment early so it can be used for Bangla detection fallback
+                val alignValue = options?.getString("align")?.lowercase() ?: "left"
 
                 options?.let {
                     formattingResult = applyTextFormatting(it, stream)
-
-                    val alignValue = options.getString("align")?.lowercase() ?: "left"
 
                     val needsBitmapForFont = options.hasKey("fontType") && options.getString("fontType") != "A"
                     val needsBitmapForStyling = (options.hasKey("bold") && options.getBoolean("bold")) ||
@@ -305,6 +305,29 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                     }
                 } ?: run {
                     stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+                }
+
+                // If text contains Bangla characters, force bitmap rendering because
+                // most printers don't have a built-in Bangla font / encoding.
+                // Unicode Bengali block: U+0980..U+09FF
+                fun containsBangla(s: String): Boolean {
+                    for (ch in s) {
+                        if (ch in '\u0980'..'\u09FF') return true
+                    }
+                    return false
+                }
+
+                if (!usedBitmapRendering && containsBangla(text)) {
+                    usedBitmapRendering = true
+                    // ensure we have a bitmap style that uses a font likely to support Bangla
+                    if (bitmapStyle == null) {
+                        bitmapStyle = TextToBitmapHandler.TextStyle(
+                            fontFamily = "sans-serif",
+                            align = alignValue
+                        )
+                    }
+                    bitmapFontSize = formattingResult?.fontSizePt?.toFloat() ?: 12.0f
+                    bitmapLetterSpacing = formattingResult?.letterSpacing ?: 1.0f
                 }
 
                 if (usedBitmapRendering) {
