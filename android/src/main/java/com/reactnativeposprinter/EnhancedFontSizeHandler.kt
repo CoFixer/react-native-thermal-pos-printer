@@ -52,7 +52,7 @@ class EnhancedFontSizeHandler(private val context: Context) {
         
         return try {
             Log.d(TAG, "Printing text as bitmap - Size: ${getSizeDescription(fontSizePt)}, Letter spacing: $letterSpacing")
-            textToBitmapHandler.printTextAsBitmap(text, fontSizePt.toFloat(), outputStream, letterSpacing)
+            textToBitmapHandler.printTextAsBitmap(text, fontSizePt.toFloat(), outputStream, letterSpacing, appendLineFeed = true)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to print text with font: ${e.message}")
             false

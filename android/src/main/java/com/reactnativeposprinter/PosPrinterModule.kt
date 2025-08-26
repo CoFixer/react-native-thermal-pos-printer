@@ -160,87 +160,7 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
     fun isConnected(promise: Promise) {
         promise.resolve(isConnected)
     }
-    
-    // @ReactMethod
-    // fun printText(text: String, options: ReadableMap?, promise: Promise) {
-    //     if (text.isEmpty()) {
-    //         promise.reject(Errors.UNSUPPORTED_TYPE, "Text cannot be empty")
-    //         return
-    //     }
-        
-    //     executeWithConnection(promise) { stream ->
-    //         try {
-    //             var usedBitmapRendering = false
-    //             options?.let { 
-    //                 val formattingResult = applyTextFormatting(it, stream)
-                    
-    //                 val alignValue = options.getString("align")?.lowercase() ?: "left"
-                    
-    //                 val needsBitmapForFont = options.hasKey("fontType") && options.getString("fontType") != "A"
-    //                 val needsBitmapForStyling = (options.hasKey("bold") && options.getBoolean("bold")) ||
-    //                                           (options.hasKey("italic") && options.getBoolean("italic")) ||
-    //                                           (options.hasKey("underline") && options.getBoolean("underline"))
-    //                 val needsBitmapForSize = options.hasKey("size") && (options.getInt("size") > 0)
-    //                 val needsBitmapForAlignment = alignValue != "left"
-                    
-    //                 if (formattingResult.shouldUseBitmapRendering || needsBitmapForFont || needsBitmapForStyling || needsBitmapForSize || needsBitmapForAlignment) {
-    //                     val textToBitmapHandler = TextToBitmapHandler(reactApplicationContext)
-                        
-    //                     val fontFamily = if (options.hasKey("fontType")) {
-    //                         when (options.getString("fontType")?.uppercase()) {
-    //                             "A" -> "monospace"
-    //                             "B" -> "sans-serif" 
-    //                             "C" -> "serif"
-    //                             else -> "monospace"
-    //                         }
-    //                     } else "monospace"
-                        
-    //                     val isBold = if (options.hasKey("bold")) options.getBoolean("bold") else false
-    //                     val isItalic = if (options.hasKey("italic")) options.getBoolean("italic") else false
-    //                     val isUnderline = if (options.hasKey("underline")) options.getBoolean("underline") else false
-    //                     val isStrikethrough = if (options.hasKey("strikethrough")) options.getBoolean("strikethrough") else false
-    //                     val doubleWidth = if (options.hasKey("doubleWidth")) options.getBoolean("doubleWidth") else false
-    //                     val doubleHeight = if (options.hasKey("doubleHeight")) options.getBoolean("doubleHeight") else false
-                        
-    //                     val style = TextToBitmapHandler.TextStyle(
-    //                         isBold = isBold,
-    //                         isItalic = isItalic,
-    //                         isUnderline = isUnderline,
-    //                         isStrikethrough = isStrikethrough,
-    //                         fontFamily = fontFamily,
-    //                         align = alignValue,
-    //                         doubleWidth = doubleWidth,
-    //                         doubleHeight = doubleHeight
-    //                     )
-                        
-    //                     val fontSize = formattingResult.fontSizePt?.toFloat() ?: 12.0f
-                        
-    //                     usedBitmapRendering = textToBitmapHandler.printTextAsBitmap(
-    //                         text, 
-    //                         fontSize, 
-    //                         stream, 
-    //                         formattingResult.letterSpacing,
-    //                         style = style
-    //                     )
-    //                 } else {
-    //                     stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
-    //                 }
-    //             } ?: run {
-    //                 stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
-    //             }
-                
-    //             if (!usedBitmapRendering) {
-    //                 stream.write(text.toByteArray(Charsets.UTF_8))
-    //             }
-                
-    //             stream.flush()
-    //         } catch (e: Exception) {
-    //             throw IOException("Failed to write text: ${e.message}", e)
-    //         }
-    //     }
-    // }
 
-    // Add this class definition at the top of your file
     @ReactMethod
     fun printText(text: String, options: ReadableMap?, promise: Promise) {
         if (text.isEmpty()) {
@@ -255,7 +175,6 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                 var bitmapStyle: TextToBitmapHandler.TextStyle? = null
                 var bitmapFontSize: Float = 12.0f
                 var bitmapLetterSpacing: Float = 1.0f
-                // determine alignment early so it can be used for Bangla detection fallback
                 val alignValue = options?.getString("align")?.lowercase() ?: "left"
 
                 options?.let {
@@ -307,9 +226,6 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                     stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
                 }
 
-                // If text contains Bangla characters, force bitmap rendering because
-                // most printers don't have a built-in Bangla font / encoding.
-                // Unicode Bengali block: U+0980..U+09FF
                 fun containsBangla(s: String): Boolean {
                     for (ch in s) {
                         if (ch in '\u0980'..'\u09FF') return true
@@ -319,7 +235,6 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
 
                 if (!usedBitmapRendering && containsBangla(text)) {
                     usedBitmapRendering = true
-                    // ensure we have a bitmap style that uses a font likely to support Bangla
                     if (bitmapStyle == null) {
                         bitmapStyle = TextToBitmapHandler.TextStyle(
                             fontFamily = "sans-serif",
@@ -331,20 +246,41 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                 }
 
                 if (usedBitmapRendering) {
-                    val maxLineWidth = 32 
+                    val maxLineWidth = 32
                     val textToBitmapHandler = TextToBitmapHandler(reactApplicationContext)
                     val allLines = breakTextIntoLinesWithWordBreaking(text, maxLineWidth)
+                    val multiLineText = allLines.filter { it.isNotEmpty() }.joinToString("\n")
+                    val isBanglaText = containsBangla(text)
+                    val lineSpacing = if (isBanglaText) 1.0f else TextToBitmapHandler.DEFAULT_LINE_SPACING
+                    when (alignValue.uppercase()) {
+                        "CENTER" -> stream.write(ESC_COMMANDS["ALIGN_CENTER"]!!)
+                        "RIGHT" -> stream.write(ESC_COMMANDS["ALIGN_RIGHT"]!!)
+                        else -> stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
+                    }
+                    stream.flush()
 
-                    for (line in allLines) {
-                        if (line.isNotEmpty()) {
-                            textToBitmapHandler.printTextAsBitmap(
-                                line,
-                                bitmapFontSize,
-                                stream,
-                                bitmapLetterSpacing,
-                                style = bitmapStyle!!
-                            )
+                    val ok = try {
+                        textToBitmapHandler.printTextAsBitmap(
+                            multiLineText,
+                            bitmapFontSize,
+                            stream,
+                            bitmapLetterSpacing,
+                            lineSpacing = lineSpacing,
+                            style = bitmapStyle!!,
+                            appendLineFeed = true
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Exception while printing bitmap: ${e.message}")
+                        false
+                    }
+
+                    if (!ok) {
+                        try {
+                            stream.write(ESC_COMMANDS["INIT"]!!)
+                            stream.flush()
+                        } catch (_: Exception) {
                         }
+                        Log.e(TAG, "Bitmap printing failed — sent INIT to recover printer state")
                     }
                 } else {
                     val maxLineWidth = 32
