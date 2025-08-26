@@ -65,7 +65,6 @@ class TextToBitmapHandler(private val context: android.content.Context) {
             try {
                 Thread.sleep(20)
             } catch (_: InterruptedException) {}
-            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "Error printing text as bitmap", e)
