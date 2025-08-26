@@ -165,24 +165,41 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
             CGFloat letterSpacing = formattingResult[@"letterSpacing"] ? [formattingResult[@"letterSpacing"] floatValue] : 1.0f;
             
             NSArray *lines = [self breakTextIntoLinesWithWordBreaking:text maxLineWidth:32];
-            
-            for (NSString *line in lines) {
-                if (line.length > 0) {
-                    NSData *bitmapData = [self printTextAsBitmap:line
-                                                        fontSize:fontSize
-                                                      fontFamily:fontFamily
-                                                          isBold:isBold
-                                                        isItalic:isItalic
-                                                     isUnderline:isUnderline
-                                                     doubleWidth:doubleWidth
-                                                    doubleHeight:doubleHeight
-                                                   letterSpacing:letterSpacing
-                                                           align:alignValue];
-                    if (bitmapData) {
-                        // write each bitmap directly so peripheral can process in chunks
-                        [self writeDataToPrinter:bitmapData];
-                    }
-                }
+            NSString *multiLineText = [[lines filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(id  _Nonnull evaluatedObject, NSDictionary<NSString *,id> * _Nullable bindings) {
+                return ((NSString *)evaluatedObject).length > 0;
+            }]] componentsJoinedByString:@"\n"];
+
+            BOOL isBanglaText = NO;
+            for (NSUInteger i = 0; i < text.length; i++) {
+                unichar ch = [text characterAtIndex:i];
+                if (ch >= 0x0980 && ch <= 0x09FF) { isBanglaText = YES; break; }
+            }
+
+            CGFloat lineSpacing = isBanglaText ? 0.0f : 4.0f;
+
+            uint8_t alignCmdArr[3] = {0x1B, 0x61, 0x00};
+            if ([alignValue isEqualToString:@"center"]) { alignCmdArr[2] = 0x01; }
+            else if ([alignValue isEqualToString:@"right"]) { alignCmdArr[2] = 0x02; }
+            NSData *alignCmd = [NSData dataWithBytes:alignCmdArr length:3];
+            [self writeDataToPrinter:alignCmd];
+
+            NSData *bitmapData = [self printTextAsBitmap:multiLineText
+                                                fontSize:fontSize
+                                              fontFamily:fontFamily
+                                                  isBold:isBold
+                                                isItalic:isItalic
+                                             isUnderline:isUnderline
+                                             doubleWidth:doubleWidth
+                                            doubleHeight:doubleHeight
+                                           letterSpacing:letterSpacing
+                                                 lineSpacing:lineSpacing
+                                                     align:alignValue];
+            BOOL wrote = [self writeDataToPrinter:bitmapData];
+            if (!wrote) {
+                // try to recover
+                uint8_t initCmd[] = {0x1B, 0x40};
+                NSData *reset = [NSData dataWithBytes:initCmd length:2];
+                [self writeDataToPrinter:reset];
             }
         } else {
             [commandData appendBytes:"\x1B\x61\x00" length:3]; 
@@ -213,6 +230,7 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
                                     doubleWidth:NO
                                     doubleHeight:NO
                                     letterSpacing:1.0
+                                    lineSpacing:0.0
                                     align:alignValue];
                                 if (bitmapData) {
                                         [self writeDataToPrinter:bitmapData];
@@ -327,16 +345,17 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
     return lines;
 }
 
-- (NSData *)printTextAsBitmap:(NSString *)text
-                     fontSize:(CGFloat)fontSize
-                   fontFamily:(NSString *)fontFamily
-                       isBold:(BOOL)isBold
-                     isItalic:(BOOL)isItalic
-                  isUnderline:(BOOL)isUnderline
-                  doubleWidth:(BOOL)doubleWidth
-                 doubleHeight:(BOOL)doubleHeight
-                letterSpacing:(CGFloat)letterSpacing
-                        align:(NSString *)align {
+ (NSData *)printTextAsBitmap:(NSString *)text
+                                         fontSize:(CGFloat)fontSize
+                                     fontFamily:(NSString *)fontFamily
+                                             isBold:(BOOL)isBold
+                                         isItalic:(BOOL)isItalic
+                                    isUnderline:(BOOL)isUnderline
+                                    doubleWidth:(BOOL)doubleWidth
+                                 doubleHeight:(BOOL)doubleHeight
+                                letterSpacing:(CGFloat)letterSpacing
+                                    lineSpacing:(CGFloat)lineSpacing
+                                                align:(NSString *)align {
     
     NSString *fontName = fontFamily;
     if (isBold && isItalic) {
@@ -349,8 +368,21 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
     
     UIFont *font = [UIFont fontWithName:fontName size:fontSize] ?: [UIFont systemFontOfSize:fontSize];
     
-    NSDictionary *attributes = @{NSFontAttributeName: font};
-    CGSize textSize = [text sizeWithAttributes:attributes];
+    NSMutableParagraphStyle *paragraphStyle = [[NSMutableParagraphStyle alloc] init];
+    if ([align isEqualToString:@"center"]) paragraphStyle.alignment = NSTextAlignmentCenter;
+    else if ([align isEqualToString:@"right"]) paragraphStyle.alignment = NSTextAlignmentRight;
+    else paragraphStyle.alignment = NSTextAlignmentLeft;
+    paragraphStyle.lineSpacing = lineSpacing;
+
+    NSDictionary *attributes = @{
+        NSFontAttributeName: font,
+        NSKernAttributeName: @(letterSpacing - 1.0f),
+        NSParagraphStyleAttributeName: paragraphStyle
+    };
+    NSAttributedString *attrText = [[NSAttributedString alloc] initWithString:text attributes:attributes];
+    CGSize textSize = [attrText boundingRectWithSize:CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX)
+                                             options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
+                                             context:nil].size;
     
     if (doubleWidth) textSize.width *= 2;
     if (doubleHeight) textSize.height *= 2;
@@ -373,7 +405,7 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
     }
     
     CGContextSetFillColorWithColor(context, [UIColor blackColor].CGColor);
-    [text drawAtPoint:CGPointMake(x, 5) withAttributes:attributes];
+    [attrText drawInRect:CGRectMake(x, 5, bitmapWidth - 10, bitmapHeight - 10)];
     
     if (isUnderline) {
         CGContextSetStrokeColorWithColor(context, [UIColor blackColor].CGColor);
@@ -420,7 +452,6 @@ RCT_EXPORT_METHOD(printImage:(NSString *)base64Image
         }
     }
 
-    // send alignment first
     if (alignCmd.length > 0) {
         [self writeDataToPrinter:alignCmd];
     }
@@ -428,7 +459,6 @@ RCT_EXPORT_METHOD(printImage:(NSString *)base64Image
     UIImage *processedImage = [self convertToWhiteBackground:image];
     NSData *rasterData = [self convertImageToRaster:processedImage];
 
-    // stream raster data in chunks to avoid overflowing BLE buffers
     NSUInteger total = rasterData.length;
     NSUInteger offset = 0;
     const NSUInteger CHUNK_SIZE = 1024;
@@ -439,7 +469,6 @@ RCT_EXPORT_METHOD(printImage:(NSString *)base64Image
         offset += chunkLen;
     }
 
-    // reset alignment to left after image
     uint8_t resetAlign[] = {0x1B, 0x61, 0x00};
     NSData *reset = [NSData dataWithBytes:resetAlign length:3];
     [self writeDataToPrinter:reset];
@@ -662,12 +691,27 @@ RCT_EXPORT_METHOD(resetPrinter:(RCTPromiseResolveBlock)resolve
     resolve(@YES);
 }
 
-- (void)writeDataToPrinter:(NSData *)data {
-    if (self.writeCharacteristic && self.connectedPeripheral) {
-    [self.connectedPeripheral writeValue:data forCharacteristic:self.writeCharacteristic type:CBCharacteristicWriteWithoutResponse];
-    // give peripheral a short time to process buffer to avoid trailing corruption
-    usleep(50000); // 50ms
+ (BOOL)writeDataToPrinter:(NSData *)data {
+    if (self.writeCharacteristic && self.connectedPeripheral && data && data.length > 0) {
+        NSUInteger total = data.length;
+        NSUInteger offset = 0;
+        const NSUInteger CHUNK_SIZE = 1024;
+        while (offset < total) {
+            @autoreleasepool {
+                NSUInteger chunkLen = MIN(CHUNK_SIZE, total - offset);
+                NSData *chunk = [data subdataWithRange:NSMakeRange(offset, chunkLen)];
+                @try {
+                    [self.connectedPeripheral writeValue:chunk forCharacteristic:self.writeCharacteristic type:CBCharacteristicWriteWithoutResponse];
+                } @catch (NSException *ex) {
+                    return NO;
+                }
+                usleep(30000);
+                offset += chunkLen;
+            }
+        }
+        return YES;
     }
+    return NO;
 }
 
 - (NSData *)convertImageToRaster:(UIImage *)image {
