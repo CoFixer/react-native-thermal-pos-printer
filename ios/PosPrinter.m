@@ -345,7 +345,7 @@ RCT_EXPORT_METHOD(printText:(NSString *)text
     return lines;
 }
 
- (NSData *)printTextAsBitmap:(NSString *)text
+- (NSData *)printTextAsBitmap:(NSString *)text
                                          fontSize:(CGFloat)fontSize
                                      fontFamily:(NSString *)fontFamily
                                              isBold:(BOOL)isBold
@@ -691,7 +691,7 @@ RCT_EXPORT_METHOD(resetPrinter:(RCTPromiseResolveBlock)resolve
     resolve(@YES);
 }
 
- (BOOL)writeDataToPrinter:(NSData *)data {
+- (BOOL)writeDataToPrinter:(NSData *)data {
     if (self.writeCharacteristic && self.connectedPeripheral && data && data.length > 0) {
         NSUInteger total = data.length;
         NSUInteger offset = 0;
