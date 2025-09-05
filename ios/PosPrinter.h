@@ -11,6 +11,7 @@
 #endif
 
 #import <CoreBluetooth/CoreBluetooth.h>
+#import <UIKit/UIKit.h>
 
 @interface PosPrinter : NSObject <RCTBridgeModule, CBCentralManagerDelegate, CBPeripheralDelegate>
 
@@ -25,5 +26,8 @@
                  letterSpacing:(CGFloat)letterSpacing
                    lineSpacing:(CGFloat)lineSpacing
                          align:(NSString *)align;
+
+- (BOOL)writeDataToPrinter:(NSData *)data;
+- (NSData *)convertImageToRaster:(UIImage *)image;
 
 @end
