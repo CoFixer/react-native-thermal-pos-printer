@@ -5,3 +5,4 @@ export * from './classes';
 
 // Default export
 export { ReactNativePosPrinter as default } from './classes/ReactNativePosPrinter';
+export * from './utils/image'

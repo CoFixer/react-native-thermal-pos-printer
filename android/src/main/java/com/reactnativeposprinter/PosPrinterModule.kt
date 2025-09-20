@@ -378,6 +378,18 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
 
     @ReactMethod
     fun printImage(base64Image: String, options: ReadableMap?, promise: Promise) {
+        try {
+            val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
+            val decoded = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            if (decoded == null) {
+                promise.reject("INVALID_IMAGE", "Invalid base64 image data")
+                return
+            }
+        } catch (e: Exception) {
+            promise.reject("INVALID_IMAGE", "Invalid base64 image: ${e.message}")
+            return
+        }
+
         executeWithConnection(promise) { stream ->
             try {
                 val align = options?.getString("align") ?: "LEFT"
@@ -388,27 +400,59 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                 }
 
                 val imageBytes = Base64.decode(base64Image, Base64.DEFAULT)
-                val factoryOptions = BitmapFactory.Options().apply { inSampleSize = 2 }
-                var originalBitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, factoryOptions)
-                originalBitmap = convertToWhiteBackground(originalBitmap)
+                val factoryOptions = BitmapFactory.Options().apply { inSampleSize = 1 }
+                val decoded = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size, factoryOptions)
+                    ?: throw IOException("INVALID_IMAGE: Failed to decode image")
+                val originalBitmap = convertToWhiteBackground(decoded)
 
-                val maxWidth = 384
+                val maxPrinterWidth = 384
                 val chunkHeight = 8
-                val widthAligned = (maxWidth / 8) * 8
-                val aspectRatio = originalBitmap.height.toFloat() / originalBitmap.width
-                val scaledHeight = (widthAligned * aspectRatio).toInt()
+
+                val srcW = originalBitmap.width
+                val srcH = originalBitmap.height
+                val aspect = if (srcW > 0) srcH.toFloat() / srcW.toFloat() else 1f
+
+                val optW = if (options?.hasKey("width") == true) options.getInt("width") else null
+                val optH = if (options?.hasKey("height") == true) options.getInt("height") else null
+
+                var targetW: Int
+                var targetH: Int
+
+                if (optW != null && optH != null && optW > 0 && optH > 0) {
+                    val scale = minOf(optW.toFloat() / srcW, optH.toFloat() / srcH)
+                    targetW = (srcW * scale).toInt().coerceAtLeast(1)
+                    targetH = (srcH * scale).toInt().coerceAtLeast(1)
+                } else if (optW != null && optW > 0) {
+                    targetW = optW
+                    targetH = (optW * aspect).toInt().coerceAtLeast(1)
+                } else if (optH != null && optH > 0) {
+                    targetH = optH
+                    targetW = (optH / aspect).toInt().coerceAtLeast(1)
+                } else {
+                    targetW = maxPrinterWidth
+                    targetH = (targetW * aspect).toInt().coerceAtLeast(1)
+                }
+
+                targetW = targetW.coerceAtMost(maxPrinterWidth)
+                val widthAligned = (targetW / 8) * 8
+                val scaledHeight = (targetH.toFloat() * (widthAligned.toFloat() / targetW.toFloat())).toInt().coerceAtLeast(1)
                 val paddedHeight = ((scaledHeight + chunkHeight - 1) / chunkHeight) * chunkHeight
 
                 val finalBitmap = Bitmap.createBitmap(widthAligned, paddedHeight, Bitmap.Config.ARGB_8888)
                 val canvas = Canvas(finalBitmap)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
                 canvas.drawColor(Color.WHITE)
-                canvas.drawBitmap(originalBitmap, Rect(0, 0, originalBitmap.width, originalBitmap.height), Rect(0, 0, widthAligned, scaledHeight), paint)
+                canvas.drawBitmap(
+                    originalBitmap,
+                    Rect(0, 0, originalBitmap.width, originalBitmap.height),
+                    Rect(0, 0, widthAligned, scaledHeight),
+                    paint
+                )
 
                 val rasterBytes = convertBitmapToRasterChunks(finalBitmap, chunkHeight)
                 for (chunk in rasterBytes) {
                     stream.write(chunk)
-                    Thread.sleep(50)
+                    Thread.sleep(40)
                 }
 
                 stream.write(byteArrayOf(0x1B, 0x33, 0x00))
@@ -416,6 +460,10 @@ class PosPrinterModule(reactContext: ReactApplicationContext) : ReactContextBase
                 stream.write(ESC_COMMANDS["ALIGN_LEFT"]!!)
 
             } catch (e: Exception) {
+                val msg = e.message ?: "Unknown"
+                if (msg.startsWith("INVALID_IMAGE")) {
+                    throw IOException(msg)
+                }
                 throw IOException("Failed to print image: ${e.message}")
             }
         }

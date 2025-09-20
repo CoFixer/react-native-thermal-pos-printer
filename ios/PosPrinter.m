@@ -431,33 +431,61 @@ RCT_EXPORT_METHOD(printImage:(NSString *)base64Image
         return;
     }
     
+    // Validate base64 and decode
     NSData *imageData = [[NSData alloc] initWithBase64EncodedString:base64Image options:0];
-    UIImage *image = [UIImage imageWithData:imageData];
-    
-    if (!image) {
-        reject(@"INVALID_IMAGE", @"Invalid image data", nil);
+    if (!imageData || imageData.length == 0) {
+        reject(@"INVALID_IMAGE", @"Invalid base64 image data", nil);
         return;
     }
-    
+    UIImage *image = [UIImage imageWithData:imageData];
+    if (!image) {
+        reject(@"INVALID_IMAGE", @"Failed to decode base64 image", nil);
+        return;
+    }
+
     NSMutableData *alignCmd = [[NSMutableData alloc] init];
-
-    if (options[@"align"]) {
-        NSString *align = [options[@"align"] lowercaseString];
-        if ([align isEqualToString:@"center"]) {
-            [alignCmd appendBytes:"\x1B\x61\x01" length:3];
-        } else if ([align isEqualToString:@"right"]) {
-            [alignCmd appendBytes:"\x1B\x61\x02" length:3];
-        } else {
-            [alignCmd appendBytes:"\x1B\x61\x00" length:3];
-        }
+    NSString *align = options[@"align"] ? [options[@"align"] lowercaseString] : @"left";
+    if ([align isEqualToString:@"center"]) {
+        [alignCmd appendBytes:"\x1B\x61\x01" length:3];
+    } else if ([align isEqualToString:@"right"]) {
+        [alignCmd appendBytes:"\x1B\x61\x02" length:3];
+    } else {
+        [alignCmd appendBytes:"\x1B\x61\x00" length:3];
     }
+    [self writeDataToPrinter:alignCmd];
 
-    if (alignCmd.length > 0) {
-        [self writeDataToPrinter:alignCmd];
+    // Apply width/height with aspect ratio and printer max width
+    CGFloat maxPrinterWidth = 384;
+    NSNumber *optW = options[@"width"];
+    NSNumber *optH = options[@"height"];
+    CGFloat srcW = image.size.width;
+    CGFloat srcH = image.size.height;
+    CGFloat aspect = srcW > 0 ? (srcH / srcW) : 1.0;
+    CGFloat targetW = maxPrinterWidth;
+    CGFloat targetH = targetW * aspect;
+    if (optW && optH && optW.floatValue > 0 && optH.floatValue > 0) {
+        CGFloat scale = MIN(optW.floatValue / srcW, optH.floatValue / srcH);
+        targetW = srcW * scale;
+        targetH = srcH * scale;
+    } else if (optW && optW.floatValue > 0) {
+        targetW = MIN(optW.floatValue, maxPrinterWidth);
+        targetH = targetW * aspect;
+    } else if (optH && optH.floatValue > 0) {
+        targetH = optH.floatValue;
+        targetW = targetH / aspect;
+        targetW = MIN(targetW, maxPrinterWidth);
     }
+    targetW = MIN(targetW, maxPrinterWidth);
 
+    // Convert to white background then resize
     UIImage *processedImage = [self convertToWhiteBackground:image];
-    NSData *rasterData = [self convertImageToRaster:processedImage];
+    CGSize size = CGSizeMake(targetW, targetH);
+    UIGraphicsBeginImageContextWithOptions(size, NO, 1.0);
+    [processedImage drawInRect:CGRectMake(0, 0, size.width, size.height)];
+    UIImage *resized = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    NSData *rasterData = [self convertImageToRaster:resized];
 
     NSUInteger total = rasterData.length;
     NSUInteger offset = 0;
@@ -465,8 +493,14 @@ RCT_EXPORT_METHOD(printImage:(NSString *)base64Image
     while (offset < total) {
         NSUInteger chunkLen = MIN(CHUNK_SIZE, total - offset);
         NSData *chunk = [rasterData subdataWithRange:NSMakeRange(offset, chunkLen)];
-        [self writeDataToPrinter:chunk];
+        if (![self writeDataToPrinter:chunk]) {
+            uint8_t initCmd[] = {0x1B, 0x40};
+            NSData *reset = [NSData dataWithBytes:initCmd length:2];
+            [self writeDataToPrinter:reset];
+            break;
+        }
         offset += chunkLen;
+        usleep(30000);
     }
 
     uint8_t resetAlign[] = {0x1B, 0x61, 0x00};

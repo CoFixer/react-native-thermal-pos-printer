@@ -12,7 +12,7 @@ A React Native library for thermal POS printers with support for Bluetooth, USB,
 - 🔧 **Auto-linking**: React Native 0.60+ auto-linking support
 - 📊 **Device Status**: Real-time printer status monitoring
 - 🛡️ **Type Safety**: Full TypeScript support
-- 🔍 **Device Discovery**: Automatic Bluetooth device discovery
+- 🔍 **Paired Device Listing**: Lists OS‑paired/connected Bluetooth devices
 - ⚡ **Performance**: Optimized for speed and reliability
 
 ## Installation
@@ -113,9 +113,9 @@ if (specificPrinter) {
   await specificPrinter.printText('Connected to specific printer!');
 }
 
-// Discover nearby Bluetooth devices
-const discoveredDevices = await ReactNativePosPrinter.discoverDevices(10000);
-console.log('Discovered devices:', discoveredDevices);
+// Note: Active Bluetooth discovery is not implemented in this package.
+// Pair your printer in the OS Bluetooth settings first,
+// then call getDeviceList() to retrieve paired devices.
 ```
 
 ### Legacy Static Methods (Still Supported)
@@ -299,18 +299,18 @@ Get printer status for this specific device.
 Initialize the printer module.
 
 #### `getDeviceList(): Promise<ThermalPrinterDevice[]>`
-Get list of available devices as ThermalPrinterDevice instances.
+Get list of OS‑paired/connected devices as `ThermalPrinterDevice` instances.
 
 #### `getDevice(address: string): Promise<ThermalPrinterDevice | null>`
-Get a specific device by address.
+Get a specific device by address (must already be paired/known to the OS).
 
-#### `discoverDevices(timeout?: number): Promise<ThermalPrinterDevice[]>`
-Discover nearby Bluetooth devices.
+#### `discoverDevices(timeout?: number): Promise<ThermalPrinterDevice[]>` (not implemented)
+Active Bluetooth discovery/scanning is not currently implemented. Use your OS Bluetooth settings to pair the printer first, then call `getDeviceList()` and `connect()`/`connectPrinter()`.
 
 #### Legacy Methods (Still Supported)
 
 #### `getDeviceList(): Promise<PrinterDevice[]>`
-Get list of available printer devices (legacy format).
+Get list of OS‑paired/connected printer devices (legacy format).
 
 #### `connectPrinter(address: string, type: string): Promise<boolean>`
 Connect to a printer device (legacy method).
@@ -325,7 +325,7 @@ Check if printer is connected (legacy method).
 Print text with formatting options (legacy method).
 
 #### `printImage(base64: string, options?: ImageOptions): Promise<boolean>`
-Print image from base64 string (legacy method).
+Print image from base64 string (legacy method). Only base64 is supported natively — use the helper below to print from a URL.
 
 #### `printQRCode(data: string, options?: QRCodeOptions): Promise<boolean>`
 Print QR code (legacy method).
@@ -551,7 +551,9 @@ await printer.disconnect();
    - Ensure the printer is paired with the device
    - Check Bluetooth permissions (especially for Android 12+)
    - Make sure the printer is in pairing mode
-   - Use device discovery: `await ReactNativePosPrinter.discoverDevices()`
+  - Pair the printer in the OS Bluetooth settings first
+  - Fetch paired devices with `await ReactNativePosPrinter.getDeviceList()`
+  - Select a device and connect with `await device.connect()` or `await ReactNativePosPrinter.connectPrinter(address, { type: 'BLUETOOTH' })`
 
 3. **Print quality issues**
    - Check paper alignment
@@ -564,9 +566,19 @@ await printer.disconnect();
    - Use appropriate codepage for your region
 
 5. **Image not printing**
-   - Ensure base64 string is valid
-   - Check image dimensions (recommended max width: 384px)
-   - Verify image format is supported (PNG, JPEG)
+  - Ensure base64 string is valid; invalid base64 will reject with `INVALID_IMAGE`
+  - Use the helper to load URLs to base64 (see below)
+  - Check output width (thermal max width ~384px); `width`/`height` options are honored with aspect-ratio preserved
+  - Image is auto-converted to white background and monochrome for printing
+
+### Print image from URL (helper)
+
+```ts
+import { fetchImageAsBase64 } from 'react-native-thermal-pos-printer';
+
+const base64 = await fetchImageAsBase64('https://example.com/logo.png');
+await ReactNativePosPrinter.printImage(base64, { align: 'CENTER', width: 300 });
+```
 
 6. **Barcode/QR code issues**
    - Verify data format matches barcode type

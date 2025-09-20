@@ -245,6 +245,7 @@ project.xcworkspace
 build/
 .idea
 .gradle
+.settings
 local.properties
 *.iml
 *.hprof
